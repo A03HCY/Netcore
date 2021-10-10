@@ -229,21 +229,3 @@ class Toconer:
 
         return res
         pass
-
-
-'''
-a = "C:/Users/32069/Downloads/EasiNoteSetup_5.2.0.6708_seewo.exe"
-Tocon = Toconer(('127.0.0.1', 1305), '123456')
-# Tocon = Toconer(('119.29.140.76', 1305), '123456')
-print(Tocon.listnodes())
-input('# ')
-Tocon.send('Hi Friend.', Tocon.uid)
-msg = Tocon.recv()
-print(msg)
-input('# ')
-print(Tocon.Remote('list', Tocon.uid, path='./'))
-input('# ')
-Tocon.Remote('get', Tocon.uid, path=a, buff=3333)
-input('# ')
-Tocon.close()
-'''
