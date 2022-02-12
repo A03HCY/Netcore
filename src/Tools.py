@@ -1,9 +1,10 @@
 from collections.abc import Iterable
+import socket
 import struct
 import lzma
 
 
-__version__ = '202202.1113'
+__version__ = '202202.1214'
 
 
 def ReadHead(meta:bytes):
@@ -119,3 +120,77 @@ def LoadFile(location:str, meta_only:bool=False, line:bool=False):
             org = BasicProtocol(line=line)
             org.load(from_temp=f.read())
     return org
+
+
+class Conet:
+    def __init__(self, conn:socket.socket=None, mode:str='TCP', buffsize:int=2048):
+        self.Idata = {}
+        self.conn = conn
+        self.mode = mode
+        self.buff = buffsize
+        if conn == None:
+            if mode == 'TCP':
+                self.conn = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            elif mode == 'UDP':
+                self.conn = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+    
+    def save(self, key, val):
+        self.Idata[key] = val
+    
+    def get(self, key):
+        return self.Idata.get(key)
+    
+    def __send(self, bytesdata=b'', address=None):
+        if self.mode == 'UDP':
+            self.conn.sendto(address, bytesdata)
+            return
+        elif self.mode == 'TCP':
+            self.conn.send(BasicProtocol(bytesdata, type_code=0, content_code=40, line=True).GetFull())
+            return
+        
+    def send(self, bytesdata=b'', address=None):
+        self.__send(bytesdata, address)
+    
+    def force_send(self, bytesdata=b''):
+        self.conn.send(bytesdata)
+    
+    def recv(self, protocal=False) -> bytes:
+        if self.mode == 'UDP':
+            bytesdatarray = self.conn.recvfrom()
+            return bytesdatarray
+
+        data = BasicProtocol()
+        header = b''
+        while len(header) < 10:
+            header += self.conn.recv(1)
+
+        length = ReadHead(header)[3]
+        recvdata = b''
+        while len(recvdata) < length:
+            if length - len(recvdata) > self.buff:
+                recvdata += self.conn.recv(self.buff)
+            else:
+                recvdata += self.conn.recv(length - len(recvdata))
+        
+        data.load(from_temp=header+recvdata, force_load=True)
+        data.decompress()
+
+        if protocal:return data
+        else:return data.meta
+    
+    def connect(self, address):
+        self.conn.connect(address)
+    
+    def bind(self, address):
+        self.conn.bind(address)
+    
+    def listen(self, num):
+        self.conn.listen(num)
+    
+    def accept(self):
+        client_socket, clientAddr = self.conn.accept()
+        client_socket = Conet(client_socket, mode='TCP')
+        return client_socket, clientAddr
+    
+    def close(self):
+        self.conn.close()
