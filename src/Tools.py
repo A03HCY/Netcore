@@ -2,9 +2,11 @@ from collections.abc import Iterable
 import socket
 import struct
 import lzma
+import json
 
 
-__version__ = '202202.1214'
+VERS = 'alpha-202202.1219'
+__version__ = VERS
 
 
 def ReadHead(meta:bytes):
@@ -154,6 +156,9 @@ class Conet:
     def force_send(self, bytesdata=b''):
         self.conn.send(bytesdata)
     
+    def force_recv(self, num):
+        return self.conn.recv(num)
+    
     def recv(self, protocal=False) -> bytes:
         if self.mode == 'UDP':
             bytesdatarray = self.conn.recvfrom()
@@ -194,3 +199,18 @@ class Conet:
     
     def close(self):
         self.conn.close()
+
+
+def Before(data):
+    data = json.dumps(data)
+    return data.encode('utf-8')
+
+def After(data):
+    data = data.decode('utf-8')
+    data = json.loads(data)
+    return data
+
+def IPShow(ip):
+    ip = list(ip)
+    ip = '.'.join(list(map(str, ip)))
+    return ip
