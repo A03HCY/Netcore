@@ -46,9 +46,6 @@ class BasicNode:
     def server(self, data, head=[255,255]):
         self.send([255,255,255,255], data, head=head)
     
-    def force_send(self, data):
-        self.conet.force_send(data)
-    
     def recv(self):
         data = self.conet.recv(protocal=True)
         return data, bytes(data.exps_data)
