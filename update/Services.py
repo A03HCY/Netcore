@@ -5,48 +5,24 @@ import json
 
 CONET_PWD = 'R3i0gdh2G3QHR094'
 
+'''
+activite = {
+    'UID':[conet, conet, ...]
+}
+'''
 
 class Idenfaction:
     def __init__(self):
-        pass
+        self.activite = {}
 
     def Idenfy(self, account:str, key:str):
         pass
 
-    def GetInfo(self, account:str):
+    def Remove(self, account:str, mac:str):
         pass
 
-
-class ConetPool:
-    def __init__(self):
-        self.pool = {}
-    
-    def free(self):
-        keys = self.pool.keys()
-        frid = [0, 0, 0, 0]
-        for nosk in range(0, 4):
-            for i in range(0, 256):
-                if (nosk == 3) and (i == 255):raise MemoryError('ID Fulled')
-                frid[nosk] = i
-                if not bytes(frid[::-1]) in keys:
-                    return bytes(frid[::-1])
-        raise MemoryError('IP Fulled')
-
-    def new(self, conet):
-        uid = self.free()
-        self.pool[uid] = conet
-        return uid
-
-    def remove(self, uid):
-        if type(uid) != bytes:uid = bytes(uid)
-        self.pool.pop(uid)
-
-    def listall(self):
-        return self.pool.keys()
-
-    def conet(self, uid):
-        if type(uid) != bytes:uid = bytes(uid)
-        return self.pool.get(uid)
+    def GetInfo(self, account:str):
+        pass
     
 
 pols = ConetPool()
