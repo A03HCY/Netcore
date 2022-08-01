@@ -3,125 +3,80 @@ from Tools import *
 import json
 
 
-CONET_PWD = 'R3i0gdh2G3QHR094'
+CONET_TOKEN = 'R3i0gdh2G3QHR094'
 
 
 class Idenfaction:
     def __init__(self):
-        pass
+        self.activite = []
+        self.acessuid = {'cons':'12345678'}
 
     def Idenfy(self, account:str, key:str):
-        pass
+        if key == self.acessuid.get(account):
+            return True
+        else:
+            return False
 
     def GetInfo(self, account:str):
         pass
-
-
-class ConetPool:
-    def __init__(self):
-        self.pool = {}
     
-    def free(self):
-        keys = self.pool.keys()
-        frid = [0, 0, 0, 0]
-        for nosk in range(0, 4):
-            for i in range(0, 256):
-                if (nosk == 3) and (i == 255):raise MemoryError('ID Fulled')
-                frid[nosk] = i
-                if not bytes(frid[::-1]) in keys:
-                    return bytes(frid[::-1])
-        raise MemoryError('IP Fulled')
-
-    def new(self, conet):
-        uid = self.free()
-        self.pool[uid] = conet
-        return uid
-
-    def remove(self, uid):
-        if type(uid) != bytes:uid = bytes(uid)
-        self.pool.pop(uid)
-
-    def listall(self):
-        return self.pool.keys()
-
-    def conet(self, uid):
-        if type(uid) != bytes:uid = bytes(uid)
-        return self.pool.get(uid)
-    
-
-pols = ConetPool()
+pols = Idenfaction()
 
 class CoreTree(StreamRequestHandler):
+    clearifiction = {
+        'setup':['mac', 'version', 'uid', 'pwd', 'token'],
+        'descr':['mac', 'version', 'uid', 'os', 'name'],
+        'handl':['command', 'data']
+    }
+    def __init__(self):
+        self.timeout  = 300
+        self.commands = {}
+
+    def command(self, cmd=None):
+        def decorator(func):
+            self.commands[cmd] = func
+            return func
+        return decorator
+
+    def idenfy(self, data):
+        global CONET_TOKEN, pols
+        if data['token'] != CONET_TOKEN:return False
+        if not pols.idenfy(data['uid'], data['pwd']):return False
+        return True
+
     def setup(self):
-        global CONET_PWD, pols
-        conet = Conet(self.request, mode='TCP')
-
-        req = After(conet.recv())
-        print('req', req)
+        self.request.settimeout(self.timeout)
+        self.conet  = Conet(self.request, mode='TCP')
         self.status = False
-        self.exit = False
-        if req.get('conet_pwd') == CONET_PWD:
-            self.status = True
-        resp = {
-            "status":self.status,
-            "version":VERS
-        }
 
-        if not self.status:
-            print('No')
-            resp = BasicProtocol(Before(resp), exps_data=[255,255,255,255]).GetFull()
-            conet.force_send(resp)
-            conet.close()
-            return
+        try:
+            req, passable = clearify(self.conet.recvdata(), self.clearifiction['setup'])
+            if (not passable) or (not self.idenfy(req)):return
+        except:return
+        descr, passable = clearify(self.conet.recvdata().update(req), self.clearifiction['descr'])
+        if not passable:return
+        self.conet.Idata.update(descr)
+        self.status = True
+        pols.activite.append(self.conet)
         
-        self.conet = conet
-        self.mac = req.get('mac_addr')
-        self.conet.save('mac', self.mac)
-        self.description = req.get('description')
-        self.conet.save('mac', self.description)
-        self.uid = pols.new(self.conet)
-
-        resp = BasicProtocol(Before(resp), exps_data=list(self.uid)).GetFull()
-        self.conet.force_send(resp)
-
-        print(self.mac, 'logint as node id', IPShow(self.uid))
-
-    def transer(self, proto):
-        pass
-    
-    def execute(self, head, data):
-        cmd = data.get('command')
-
-        if cmd == 'exit':
-            self.exit = False
-    
     def handle(self):
         if not self.status:return
-        global pols
-        SEVID = bytes([255,255,255,255])
         while True:
             try:
-                if not self.exit:return
-                recv = self.conet.recv(protocal=True)
-                head = [recv.type_code, recv.cont_code]
-                tuid = bytes(recv.exps_data)
-                data = After(recv.meta)
-            except:return
-
-            if (tuid == SEVID) or (tuid == self.uid):
-                self.execute(head, data)
-                continue
+                data, passable = clearify(self.conet.recvdata(), self.clearifiction['handl'])
+            except socket.timeout:
+                break
+            except:
+                break
+            if data[0] in self.commands:
+                self.commands[data[0]](self.conet)
             else:
-                self.transer(recv)
+                pass
 
 
     def finish(self):
-        if not self.status:return
-        global pols
-        print(self.mac, 'logout as node id', IPShow(self.uid))
-        pols.remove(self.uid)
-        self.conet.close()
-
+        if self.conet in pols.activite:
+            pols.activite.remove(self.conet)
 
 
 def Start(service, port):
@@ -130,5 +85,13 @@ def Start(service, port):
     server.serve_forever()
 
 
+
+
 if __name__ == "__main__":
-    Start(CoreTree, 3377)
+    app = CoreTree()
+
+    @app.command('wer')
+    def a(conet:Conet):
+        pass
+
+    Start(app, 3377)
