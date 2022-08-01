@@ -1,6 +1,7 @@
 from Tools import *
 import json
 import uuid
+import time
 
 
 def GetMac():
@@ -9,22 +10,45 @@ def GetMac():
 
 
 class BasicNode:
-    def __init__(self, description:str):
-        pass
+    clearifiction = {
+        'setup':['mac', 'version', 'uid', 'pwd', 'token'],
+        'descr':['mac', 'version', 'uid', 'os', 'name'],
+        'handl':['command', 'data']
+    }
+    status = False
+    
+    def __init__(self, uid:str, pwd:str):
+        self.conet = Conet()
+        self.conet.Idata.update({
+            'uid':uid,
+            'pwd':pwd,
+            'mac':GetMac(),
+            'version':'0.0.0',
+            'os':'A',
+            'name':'A'
+        })
 
-    def connect(self, address:tuple, conet_pwd:str):
-        pass
+    def connect(self, address:tuple, token:str):
+        self.conet.Idata.update({
+            'adr':str(address),
+            'token':token
+        })
+        try:
+            self.conet.connect(address)
+            self.idenfy()
+        except:
+            print('Error')
+    
+    def idenfy(self):
+        #self.conet.sendata(self.conet.Idata)
+        #self.conet.sendata(self.conet.Idata)
+        print(self.conet.Idata)
     
     def close(self):
         self.conet.close()
-    
-    def send(self, uid, data, head=[255,255]):
-        pass
-    
-    def recv(self):
-        data = self.conet.recv(protocal=True)
-        return data, bytes(data.exps_data)
-    
-    def handle(self): ...
 
-    def finish(self):...
+
+ts = int(input('# '))
+app = BasicNode('cons', '12345678')
+app.connect(('localhost', 3377), 'R3i0gdh2G3QHR094')
+time.sleep(ts)

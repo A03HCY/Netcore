@@ -5,6 +5,13 @@ import json
 
 CONET_TOKEN = 'R3i0gdh2G3QHR094'
 
+COMMANDS = {}
+
+def command(cmd=None):
+    def decorator(func):
+        COMMANDS[cmd] = func
+        return func
+    return decorator
 
 class Idenfaction:
     def __init__(self):
@@ -12,6 +19,7 @@ class Idenfaction:
         self.acessuid = {'cons':'12345678'}
 
     def Idenfy(self, account:str, key:str):
+        print(account, key)
         if key == self.acessuid.get(account):
             return True
         else:
@@ -20,7 +28,7 @@ class Idenfaction:
     def GetInfo(self, account:str):
         pass
     
-pols = Idenfaction()
+POLS = Idenfaction()
 
 class CoreTree(StreamRequestHandler):
     clearifiction = {
@@ -28,23 +36,16 @@ class CoreTree(StreamRequestHandler):
         'descr':['mac', 'version', 'uid', 'os', 'name'],
         'handl':['command', 'data']
     }
-    def __init__(self):
-        self.timeout  = 300
-        self.commands = {}
-
-    def command(self, cmd=None):
-        def decorator(func):
-            self.commands[cmd] = func
-            return func
-        return decorator
+    timeout  = 300
 
     def idenfy(self, data):
-        global CONET_TOKEN, pols
+        global CONET_TOKEN, POLS
         if data['token'] != CONET_TOKEN:return False
-        if not pols.idenfy(data['uid'], data['pwd']):return False
+        if not POLS.Idenfy(data['uid'], data['pwd']):return False
         return True
 
     def setup(self):
+        print('New')
         self.request.settimeout(self.timeout)
         self.conet  = Conet(self.request, mode='TCP')
         self.status = False
@@ -52,31 +53,43 @@ class CoreTree(StreamRequestHandler):
         try:
             req, passable = clearify(self.conet.recvdata(), self.clearifiction['setup'])
             if (not passable) or (not self.idenfy(req)):return
-        except:return
-        descr, passable = clearify(self.conet.recvdata().update(req), self.clearifiction['descr'])
+        except socket.timeout:
+            return
+        except:
+            return
+        try:
+            data = self.conet.recvdata()
+            data.update(req)
+            descr, passable = clearify(data, self.clearifiction['descr'])
+        except:
+            return
         if not passable:return
         self.conet.Idata.update(descr)
         self.status = True
-        pols.activite.append(self.conet)
+        POLS.activite.append(self.conet)
         
     def handle(self):
         if not self.status:return
         while True:
             try:
                 data, passable = clearify(self.conet.recvdata(), self.clearifiction['handl'])
+                self.conet.save('args', (data, passable))
             except socket.timeout:
                 break
             except:
                 break
-            if data[0] in self.commands:
-                self.commands[data[0]](self.conet)
+
+            if data[0] in COMMANDS:
+                COMMANDS[data[0]](self.conet)
             else:
                 pass
 
 
     def finish(self):
-        if self.conet in pols.activite:
-            pols.activite.remove(self.conet)
+        print('Out')
+        if self.conet in POLS.activite:
+            POLS.activite.remove(self.conet)
+        self.conet.close()
 
 
 def Start(service, port):
@@ -88,10 +101,8 @@ def Start(service, port):
 
 
 if __name__ == "__main__":
-    app = CoreTree()
+    @command('as')
+    def aa(conet):
+        print('as cmd')
 
-    @app.command('wer')
-    def a(conet:Conet):
-        pass
-
-    Start(app, 3377)
+    Start(CoreTree, 3377)

@@ -167,15 +167,20 @@ class Conet:
         data = BasicProtocol()
         header = b''
         while len(header) < 10:
-            header += self.conn.recv(1)
+            temp = self.conn.recv(1)
+            header += temp
+            if temp == b'':break
 
         length = ReadHead(header)[3]
         recvdata = b''
         while len(recvdata) < length:
             if length - len(recvdata) > self.buff:
-                recvdata += self.conn.recv(self.buff)
+                temp = self.conn.recv(self.buff)
+                recvdata += temp
             else:
-                recvdata += self.conn.recv(length - len(recvdata))
+                temp = self.conn.recv(length - len(recvdata))
+                recvdata += temp
+            if temp == b'':break
         
         data.load(from_temp=header+recvdata, force_load=True)
 
@@ -208,6 +213,7 @@ class Conet:
         return client_socket, clientAddr
     
     def close(self):
+        self.conn.shutdown(2)
         self.conn.close()
 
 
