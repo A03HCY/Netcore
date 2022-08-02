@@ -5,7 +5,7 @@ import lzma
 import json
 
 
-VERS = 'alpha-202202.1219'
+VERS = 'beta-202208.0215'
 __version__ = VERS
 
 
@@ -147,11 +147,11 @@ class Conet:
             self.conn.sendto(address, bytesdata)
             return
         elif self.mode == 'TCP':
-            self.conn.send(BasicProtocol(bytesdata, type_code=0, content_code=40, line=True).GetFull())
+            self.conn.send(bytesdata)
             return
         
     def send(self, bytesdata=b'', address=None):
-        self.__send(bytesdata, address)
+        self.__send(BasicProtocol(bytesdata, type_code=0, content_code=40, line=True).GetFull(), address)
     
     def force_send(self, bytesdata=b''):
         self.conn.send(bytesdata)
@@ -159,7 +159,7 @@ class Conet:
     def force_recv(self, num):
         return self.conn.recv(num)
     
-    def recv(self, protocal=False) -> bytes:
+    def recv(self, protocal=False, ans=False) -> bytes:
         if self.mode == 'UDP':
             bytesdatarray = self.conn.recvfrom()
             return bytesdatarray
@@ -167,21 +167,36 @@ class Conet:
         data = BasicProtocol()
         header = b''
         while len(header) < 10:
-            header += self.conn.recv(1)
+            temp = self.conn.recv(1)
+            header += temp
+            if temp == b'':break
 
         length = ReadHead(header)[3]
         recvdata = b''
         while len(recvdata) < length:
             if length - len(recvdata) > self.buff:
-                recvdata += self.conn.recv(self.buff)
+                temp = self.conn.recv(self.buff)
+                recvdata += temp
             else:
-                recvdata += self.conn.recv(length - len(recvdata))
+                temp = self.conn.recv(length - len(recvdata))
+                recvdata += temp
+            if temp == b'':break
         
         data.load(from_temp=header+recvdata, force_load=True)
-        data.decompress()
 
         if protocal:return data
         else:return data.meta
+    
+    def recvdata(self):
+        data = self.recv()
+        data = data.decode('utf-8')
+        data = json.loads(data)
+        return data
+    
+    def sendata(self, data):
+        data = json.dumps(data)
+        data = data.encode('utf-8')
+        self.send(data)
     
     def connect(self, address):
         self.conn.connect(address)
@@ -198,19 +213,20 @@ class Conet:
         return client_socket, clientAddr
     
     def close(self):
+        self.conn.shutdown(2)
         self.conn.close()
 
-
-def Before(data):
-    data = json.dumps(data)
-    return data.encode('utf-8')
-
-def After(data):
-    data = data.decode('utf-8')
-    data = json.loads(data)
-    return data
 
 def IPShow(ip):
     ip = list(ip)
     ip = '.'.join(list(map(str, ip)))
     return ip
+
+
+def clearify(org, dic, defult=None):
+    passable = True
+    res = {}
+    for i in dic:
+        if not i in org:passable = False
+        res[i] = org.get(i, defult)
+    return res, passable
