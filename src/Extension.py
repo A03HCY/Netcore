@@ -22,6 +22,11 @@ class ServiceNodeSupport:
         }
         remote.sendata(res)
 
+
+class Transfer:
+    def trans(conet:Conet):
+        pass
+
     
 a = Tree()
 
