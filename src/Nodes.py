@@ -13,7 +13,7 @@ def GetMac():
 class BasicNode:
     clearifiction = {
         'setup':['mac', 'version', 'uid', 'pwd', 'token'],
-        'descr':['mac', 'version', 'uid', 'os', 'name'],
+        'descr':['os', 'name'],
         'handl':['command', 'data']
     }
     status = False
@@ -28,6 +28,10 @@ class BasicNode:
             'os':platform.platform(),
             'name':platform.node()
         })
+        self.setup()
+    
+    def setup(self):
+        pass
 
     def connect(self, address:tuple, token:str):
         self.conet.Idata.update({
@@ -41,28 +45,72 @@ class BasicNode:
             print('Error')
     
     def idenfy(self):
-        self.conet.sendata(self.conet.Idata)
-        self.conet.sendata(self.conet.Idata)
-        print(self.conet.Idata)
+        self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['setup'])[0])
+        self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['descr'])[0])
     
     def close(self):
         self.conet.close()
     
-    def command(self, s):
+    def cmd(self, s, d={}):
         data = {
             'command':s,
-            'data':{}
+            'data':d
         }
         self.conet.sendata(data)
 
 
+class ServiceNode(BasicNode):
+    def setup(self):
+        self.meth = {}
+    
+    def extension(self, ext):
+        for name in dir(ext):
+            if name.startswith('_'):continue
+            self.meth[name] = getattr(ext, name)
+    
+    def command(self, cmd=None):
+        def decorator(func):
+            self.meth[cmd] = func
+            return func
+        return decorator
 
-app = BasicNode('cons', '123456')
+    def run(self):
+        while True:
+            try:
+                data, passable = clearify(self.conet.recvdata(), self.clearifiction['handl'])
+                self.conet.save('args', (data, passable))
+                self.conet.save('data', data.get('data'))
+            except socket.timeout:
+                break
+            except:
+                break
+
+            if data['command'] in self.meth.keys():
+                self.meth[data['command']](self.conet)
+            else:
+                pass
+
+
+class T:
+    def hi(conet:Conet):
+        data = conet.get('data')
+        print(data)
+        data['command'] = 'multi_cmd_res'
+        res = {
+            'command':'multi_cmd',
+            'data':data
+        }
+        conet.sendata(res)
+
+
+app = ServiceNode('cons', '123456')
+
+app.extension(T)
 
 app.connect(('localhost', 1035), 'hi')
 
-app.command('trans')
-
 time.sleep(1)
+
+app.run()
 
 app.close()

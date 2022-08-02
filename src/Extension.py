@@ -1,15 +1,31 @@
 from Tools    import *
 from Services import *
 
-class Transfer:
-    def bye(conet:Conet):
+class ServiceNodeSupport:
+    def multi_cmd(conet:Conet):
         data = conet.get('data')
-        conet.idf.GetByMac(conet.get('mac')).close()
+        remo = data.get('remote', '')
+        rcmd = data.get('command', '')
+        remote = conet.idf.GetByMac(remo)
+        if not remote:
+            res = {
+                'respond':'Inactive',
+                'meta':data
+            }
+            conet.sendata(res)
+            return
+        data['remote'] = conet.get('mac')
+        data.pop('command')
+        res = {
+            'command':rcmd,
+            'data':data
+        }
+        remote.sendata(res)
 
     
 a = Tree()
 
-a.extension(Transfer)
+a.extension(ServiceNodeSupport)
 a.idf.acessuid = {'cons':'123456'}
 
 print(a.meth)
