@@ -5,7 +5,7 @@ import lzma
 import json
 
 
-VERS = 'alpha-202202.1219'
+VERS = 'beta-202208.0215'
 __version__ = VERS
 
 

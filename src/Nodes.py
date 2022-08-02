@@ -1,4 +1,5 @@
 from Tools import *
+import platform
 import json
 import uuid
 import time
@@ -23,9 +24,9 @@ class BasicNode:
             'uid':uid,
             'pwd':pwd,
             'mac':GetMac(),
-            'version':'0.0.0',
-            'os':'A',
-            'name':'A'
+            'version':VERS,
+            'os':platform.platform(),
+            'name':platform.node()
         })
 
     def connect(self, address:tuple, token:str):
@@ -54,8 +55,9 @@ class BasicNode:
         }
         self.conet.sendata(data)
 
-
+'''
 app = BasicNode('cons', '12345678')
 app.connect(('localhost', 3377), 'R3i0gdh2G3QHR094')
 app.command('as')
 app.close()
+'''

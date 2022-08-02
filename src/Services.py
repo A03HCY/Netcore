@@ -113,9 +113,10 @@ def Start(service, port):
 
 
 
-
+'''
 @command('as')
 def aa(conet:Conet):
-    print(conet.get('mac'))
+    print(conet.Idata)
 
 Start(CoreTree, 3377)
+'''
