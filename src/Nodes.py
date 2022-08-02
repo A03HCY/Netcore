@@ -54,10 +54,3 @@ class BasicNode:
             'data':{}
         }
         self.conet.sendata(data)
-
-'''
-app = BasicNode('cons', '12345678')
-app.connect(('localhost', 3377), 'R3i0gdh2G3QHR094')
-app.command('as')
-app.close()
-'''

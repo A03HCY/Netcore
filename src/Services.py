@@ -6,17 +6,15 @@ import json
 CONET_TOKEN = 'R3i0gdh2G3QHR094'
 
 COMMANDS = {}
-
-def command(cmd=None):
-    def decorator(func):
-        COMMANDS[cmd] = func
-        return func
-    return decorator
+POLS = {}
 
 class Idenfaction:
     def __init__(self):
         self.activite = []
-        self.acessuid = {'cons':'12345678'}
+        self.acessuid = {}
+        self.setup()
+    
+    def setup(self):pass
 
     def Idenfy(self, account:str, key:str):
         if key == self.acessuid.get(account):
@@ -36,10 +34,9 @@ class Idenfaction:
     def RemoveMac(self, mac:str):
         for conet in self.activite:
             if conet.get('mac') == mac:
-                conet.close()
                 self.activite.remove(conet)
+                conet.close()
     
-POLS = Idenfaction()
 
 class CoreTree(StreamRequestHandler):
     clearifiction = {
@@ -50,15 +47,16 @@ class CoreTree(StreamRequestHandler):
     timeout  = 300
 
     def idenfy(self, data):
-        global CONET_TOKEN, POLS
+        global CONET_TOKEN
         if data['token'] != CONET_TOKEN:return False
-        if not POLS.Idenfy(data['uid'], data['pwd']):return False
+        if not POLS[self.cmdid].Idenfy(data['uid'], data['pwd']):return False
         return True
 
     def setup(self):
         print('New')
         self.request.settimeout(self.timeout)
         self.conet  = Conet(self.request, mode='TCP')
+        self.cmdid  = self.server.server_address[1]
         self.status = False
 
         try:
@@ -78,8 +76,8 @@ class CoreTree(StreamRequestHandler):
         self.conet.Idata.update(req)
         self.conet.Idata.update(descr)
         self.status = True
-        POLS.RemoveMac(self.conet.get('mac'))
-        POLS.activite.append(self.conet)
+        POLS[self.cmdid].RemoveMac(self.conet.get('mac'))
+        POLS[self.cmdid].activite.append(self.conet)
         
     def handle(self):
         global COMMANDS
@@ -93,30 +91,31 @@ class CoreTree(StreamRequestHandler):
             except:
                 break
 
-            if data['command'] in COMMANDS.keys():
-                COMMANDS[data['command']](self.conet)
+            if data['command'] in COMMANDS[self.cmdid].keys():
+                COMMANDS[self.cmdid][data['command']](self.conet)
             else:
                 pass
 
 
     def finish(self):
-        print('Out')
-        if self.conet in POLS.activite:
-            POLS.activite.remove(self.conet)
-        self.conet.close()
+        print('Out of', self.conet.get('mac'))
+        POLS[self.cmdid].RemoveMac(self.conet.get('mac'))
 
 
-def Start(service, port):
-    addr = ('0.0.0.0',port)
-    server = ThreadingTCPServer(addr, service)
-    server.serve_forever()
+class Tree:
+    def __init__(self, idf=Idenfaction()):
+        self.meth = {}
+        self.idf  = idf
 
-
-
-'''
-@command('as')
-def aa(conet:Conet):
-    print(conet.Idata)
-
-Start(CoreTree, 3377)
-'''
+    def command(self, cmd=None):
+        def decorator(func):
+            self.meth[cmd] = func
+            return func
+        return decorator
+    
+    def run(self, ip:str, port:int):
+        COMMANDS[port] = self.meth
+        POLS[port] = self.idf
+        addr = (ip, port)
+        server = ThreadingTCPServer(addr, CoreTree)
+        server.serve_forever()

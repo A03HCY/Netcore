@@ -5,7 +5,7 @@ import lzma
 import json
 
 
-VERS = 'beta-202208.0215'
+VERS = '2.0.0'
 __version__ = VERS
 
 
