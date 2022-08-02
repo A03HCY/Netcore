@@ -40,8 +40,8 @@ class BasicNode:
             print('Error')
     
     def idenfy(self):
-        #self.conet.sendata(self.conet.Idata)
-        #self.conet.sendata(self.conet.Idata)
+        self.conet.sendata(self.conet.Idata)
+        self.conet.sendata(self.conet.Idata)
         print(self.conet.Idata)
     
     def close(self):
@@ -52,3 +52,4 @@ ts = int(input('# '))
 app = BasicNode('cons', '12345678')
 app.connect(('localhost', 3377), 'R3i0gdh2G3QHR094')
 time.sleep(ts)
+app.close()
