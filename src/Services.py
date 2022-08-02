@@ -3,10 +3,9 @@ from Tools import *
 import json
 
 
-CONET_TOKEN = 'R3i0gdh2G3QHR094'
-
-COMMANDS = {}
-POLS = {}
+CONET_TOKEN = {}
+COMMANDS    = {}
+POLS        = {}
 
 class Idenfaction:
     def __init__(self):
@@ -37,6 +36,10 @@ class Idenfaction:
                 self.activite.remove(conet)
                 conet.close()
     
+    def GetByMac(self, mac:str) -> Conet:
+        for conet in self.activite:
+            if conet.get('mac') == mac:return conet
+    
 
 class CoreTree(StreamRequestHandler):
     clearifiction = {
@@ -48,7 +51,7 @@ class CoreTree(StreamRequestHandler):
 
     def idenfy(self, data):
         global CONET_TOKEN
-        if data['token'] != CONET_TOKEN:return False
+        if data['token'] != CONET_TOKEN[self.cmdid]:return False
         if not POLS[self.cmdid].Idenfy(data['uid'], data['pwd']):return False
         return True
 
@@ -86,12 +89,14 @@ class CoreTree(StreamRequestHandler):
             try:
                 data, passable = clearify(self.conet.recvdata(), self.clearifiction['handl'])
                 self.conet.save('args', (data, passable))
+                self.conet.save('data', data.get('data'))
             except socket.timeout:
                 break
             except:
                 break
 
             if data['command'] in COMMANDS[self.cmdid].keys():
+                self.conet.idf = POLS[self.cmdid]
                 COMMANDS[self.cmdid][data['command']](self.conet)
             else:
                 pass
@@ -113,9 +118,16 @@ class Tree:
             return func
         return decorator
     
-    def run(self, ip:str, port:int):
-        COMMANDS[port] = self.meth
-        POLS[port] = self.idf
+    def extension(self, ext):
+        for name in dir(ext):
+            if name.startswith('_'):continue
+            self.meth[name] = getattr(ext, name)
+    
+    def run(self, ip:str, port:int, token:str):
+        self.token = token
+        CONET_TOKEN[port] = token
+        COMMANDS[port]    = self.meth
+        POLS[port]        = self.idf
         addr = (ip, port)
         server = ThreadingTCPServer(addr, CoreTree)
         server.serve_forever()

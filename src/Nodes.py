@@ -54,3 +54,15 @@ class BasicNode:
             'data':{}
         }
         self.conet.sendata(data)
+
+
+
+app = BasicNode('cons', '123456')
+
+app.connect(('localhost', 1035), 'hi')
+
+app.command('trans')
+
+time.sleep(1)
+
+app.close()

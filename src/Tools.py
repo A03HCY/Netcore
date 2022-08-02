@@ -130,6 +130,7 @@ class Conet:
         self.conn = conn
         self.mode = mode
         self.buff = buffsize
+        self.idf  = None
         if conn == None:
             if mode == 'TCP':
                 self.conn = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -213,8 +214,10 @@ class Conet:
         return client_socket, clientAddr
     
     def close(self):
-        self.conn.shutdown(2)
-        self.conn.close()
+        try:
+            self.conn.shutdown(2)
+            self.conn.close()
+        except:pass
 
 
 def IPShow(ip):
