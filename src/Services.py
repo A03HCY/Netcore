@@ -19,7 +19,6 @@ class Idenfaction:
         self.acessuid = {'cons':'12345678'}
 
     def Idenfy(self, account:str, key:str):
-        print(account, key)
         if key == self.acessuid.get(account):
             return True
         else:
@@ -27,13 +26,25 @@ class Idenfaction:
 
     def GetInfo(self, account:str):
         pass
+
+    def UniqueMacTest(self, mac:str):
+        Unique = True
+        for conet in self.activite:
+            if conet.get('mac') == mac:Unique = False
+        return Unique
+
+    def RemoveMac(self, mac:str):
+        for conet in self.activite:
+            if conet.get('mac') == mac:
+                conet.close()
+                self.activite.remove(conet)
     
 POLS = Idenfaction()
 
 class CoreTree(StreamRequestHandler):
     clearifiction = {
         'setup':['mac', 'version', 'uid', 'pwd', 'token'],
-        'descr':['mac', 'version', 'uid', 'os', 'name'],
+        'descr':['os', 'name'],
         'handl':['command', 'data']
     }
     timeout  = 300
@@ -64,11 +75,14 @@ class CoreTree(StreamRequestHandler):
         except:
             return
         if not passable:return
+        self.conet.Idata.update(req)
         self.conet.Idata.update(descr)
         self.status = True
+        POLS.RemoveMac(self.conet.get('mac'))
         POLS.activite.append(self.conet)
         
     def handle(self):
+        global COMMANDS
         if not self.status:return
         while True:
             try:
@@ -79,8 +93,8 @@ class CoreTree(StreamRequestHandler):
             except:
                 break
 
-            if data[0] in COMMANDS:
-                COMMANDS[data[0]](self.conet)
+            if data['command'] in COMMANDS.keys():
+                COMMANDS[data['command']](self.conet)
             else:
                 pass
 
@@ -100,9 +114,8 @@ def Start(service, port):
 
 
 
-if __name__ == "__main__":
-    @command('as')
-    def aa(conet):
-        print('as cmd')
+@command('as')
+def aa(conet:Conet):
+    print(conet.get('mac'))
 
-    Start(CoreTree, 3377)
+Start(CoreTree, 3377)

@@ -46,10 +46,16 @@ class BasicNode:
     
     def close(self):
         self.conet.close()
+    
+    def command(self, s):
+        data = {
+            'command':s,
+            'data':{}
+        }
+        self.conet.sendata(data)
 
 
-ts = int(input('# '))
 app = BasicNode('cons', '12345678')
 app.connect(('localhost', 3377), 'R3i0gdh2G3QHR094')
-time.sleep(ts)
+app.command('as')
 app.close()
