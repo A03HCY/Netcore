@@ -1,13 +1,21 @@
 from collections.abc import Iterable
 import socket
 import struct
+import queue
 import lzma
 import json
+import random 
+import string
+import secrets
 
 
-VERS = '2.0.0'
+VERS = '2.0.5'
 __version__ = VERS
 
+
+def RanCode(num:int=4):
+    res = ''.join(secrets.choice(string.ascii_letters + string.digits) for x in range(num))
+    return res
 
 def ReadHead(meta:bytes):
     type_code = meta[0]
@@ -131,6 +139,7 @@ class Conet:
         self.mode = mode
         self.buff = buffsize
         self.idf  = None
+        self.que  = queue.Queue(maxsize=1)
         if conn == None:
             if mode == 'TCP':
                 self.conn = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -148,14 +157,20 @@ class Conet:
             self.conn.sendto(address, bytesdata)
             return
         elif self.mode == 'TCP':
-            self.conn.send(bytesdata)
+            self.force_send(bytesdata)
             return
         
     def send(self, bytesdata=b'', address=None):
         self.__send(BasicProtocol(bytesdata, type_code=0, content_code=40, line=True).GetFull(), address)
     
     def force_send(self, bytesdata=b''):
+        safe = RanCode(4)
+        self.que.put(safe)
+        print('New code', safe)
         self.conn.send(bytesdata)
+        self.que.get()
+        self.que.task_done()
+        print('Task done', safe)
     
     def force_recv(self, num):
         return self.conn.recv(num)

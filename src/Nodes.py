@@ -111,6 +111,6 @@ app.connect(('localhost', 1035), 'hi')
 
 time.sleep(1)
 
-app.run()
-
 app.close()
+
+app.run()

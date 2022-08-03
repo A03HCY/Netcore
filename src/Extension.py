@@ -1,7 +1,25 @@
 from Tools    import *
 from Services import *
 
-class ServiceNodeSupport:
+class TransferSupport:
+    def trans(conet:Conet):
+        data = conet.get('data')
+        remo = data.get('remote', '')
+        remote = conet.idf.GetByMac(remo)
+        if not remote:
+            res = {
+                'respond':'Inactive',
+                'meta':data
+            }
+            conet.sendata(res)
+            return
+        data['remote'] = conet.get('mac')
+        res = {
+            'command':'trans_data',
+            'data':data
+        }
+        remote.sendata(res)
+    
     def multi_cmd(conet:Conet):
         data = conet.get('data')
         remo = data.get('remote', '')
@@ -22,15 +40,10 @@ class ServiceNodeSupport:
         }
         remote.sendata(res)
 
-
-class Transfer:
-    def trans(conet:Conet):
-        pass
-
     
 a = Tree()
 
-a.extension(ServiceNodeSupport)
+a.extension(TransferSupport)
 a.idf.acessuid = {'cons':'123456'}
 
 print(a.meth)
