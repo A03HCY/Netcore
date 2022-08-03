@@ -9,7 +9,7 @@ import string
 import secrets
 
 
-VERS = '2.0.5'
+VERS = '2.1.3'
 __version__ = VERS
 
 

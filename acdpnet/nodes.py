@@ -1,4 +1,4 @@
-from Tools import *
+from acdpnet.tools import *
 import platform
 import json
 import uuid
@@ -13,7 +13,7 @@ def GetMac():
 class BasicNode:
     clearifiction = {
         'setup':['mac', 'version', 'uid', 'pwd', 'token'],
-        'descr':['os', 'name'],
+        'descr':['os', 'name', 'meth'],
         'handl':['command', 'data']
     }
     status = False
@@ -26,8 +26,11 @@ class BasicNode:
             'mac':GetMac(),
             'version':VERS,
             'os':platform.platform(),
-            'name':platform.node()
+            'name':platform.node(),
+            'meth':[]
         })
+        self.meth   = {}
+        self.server = {}
         self.setup()
     
     def setup(self):
@@ -40,35 +43,41 @@ class BasicNode:
         })
         try:
             self.conet.connect(address)
-            self.idenfy()
         except:
             print('Error')
+        self.idenfy()
     
     def idenfy(self):
+        self.conet.Idata.update({
+            'meth':list(self.meth.keys())
+        })
         self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['setup'])[0])
         self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['descr'])[0])
+        self.server = self.conet.recvdata()
+        print(self.server)
     
     def close(self):
         self.conet.close()
     
-    def cmd(self, s, d={}):
-        data = {
-            'command':s,
-            'data':d
-        }
-        self.conet.sendata(data)
-
-
-class ServiceNode(BasicNode):
-    def setup(self):
-        self.meth = {}
+    def recv(self) -> dict:
+        data = self.conet.recvdata()
+        return data
     
+    def send(self, command:str, data:dict):
+        resp = {
+            'command':command,
+            'data':data
+        }
+        self.conet.sendata(resp)
+
+
+class ExtensionSupportNode(BasicNode):
     def extension(self, ext):
         for name in dir(ext):
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
     
-    def command(self, cmd=None):
+    def command(self, cmd:str='None'):
         def decorator(func):
             self.meth[cmd] = func
             return func
@@ -101,16 +110,3 @@ class T:
             'data':data
         }
         conet.sendata(res)
-
-
-app = ServiceNode('cons', '123456')
-
-app.extension(T)
-
-app.connect(('localhost', 1035), 'hi')
-
-time.sleep(1)
-
-app.close()
-
-app.run()

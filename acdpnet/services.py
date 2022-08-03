@@ -1,5 +1,5 @@
 from socketserver import ThreadingTCPServer, StreamRequestHandler
-from Tools import *
+from acdpnet.tools import *
 import json
 
 
@@ -44,7 +44,7 @@ class Idenfaction:
 class CoreTree(StreamRequestHandler):
     clearifiction = {
         'setup':['mac', 'version', 'uid', 'pwd', 'token'],
-        'descr':['os', 'name'],
+        'descr':['os', 'name', 'meth'],
         'handl':['command', 'data']
     }
     timeout  = 300
@@ -76,6 +76,13 @@ class CoreTree(StreamRequestHandler):
         except:
             return
         if not passable:return
+        try:
+            res = {
+                'meth':list(COMMANDS[self.cmdid].keys())
+            }
+            self.conet.sendata(res)
+        except:
+            return
         self.conet.Idata.update(req)
         self.conet.Idata.update(descr)
         self.status = True
@@ -123,8 +130,8 @@ class Tree:
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
     
-    def run(self, ip:str, port:int, token:str):
-        self.token = token
+    def run(self, ip:str, port:int, token:str=None):
+        if token:self.token = token
         CONET_TOKEN[port] = token
         COMMANDS[port]    = self.meth
         POLS[port]        = self.idf

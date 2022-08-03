@@ -1,5 +1,5 @@
-from Tools    import *
-from Services import *
+from acdpnet.tools    import *
+from acdpnet.services import *
 
 class TransferSupport:
     def trans(conet:Conet):
@@ -39,13 +39,3 @@ class TransferSupport:
             'data':data
         }
         remote.sendata(res)
-
-    
-a = Tree()
-
-a.extension(TransferSupport)
-a.idf.acessuid = {'cons':'123456'}
-
-print(a.meth)
-
-a.run('0.0.0.0', 1035, 'hi')
