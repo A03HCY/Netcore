@@ -1,5 +1,6 @@
 from socketserver import ThreadingTCPServer, StreamRequestHandler
 from acdpnet.tools import *
+from acdpnet.extension.transfer import InfoSupport
 import json
 
 
@@ -8,6 +9,10 @@ COMMANDS    = {}
 POLS        = {}
 
 class Idenfaction:
+    clearifiction = {
+        'descr':['mac', 'os', 'version', 'name', 'meth', 'uid'],
+    }
+
     def __init__(self):
         self.activite = []
         self.acessuid = {}
@@ -21,8 +26,12 @@ class Idenfaction:
         else:
             return False
 
-    def GetInfo(self, account:str):
-        pass
+    def GetInfo(self):
+        data = []
+        for conet in self.activite:
+            info = clearify(conet.Idata, self.clearifiction['descr'])
+            data.append(info)
+        return data
 
     def UniqueMacTest(self, mac:str):
         Unique = True
@@ -52,6 +61,7 @@ class CoreTree(StreamRequestHandler):
     def idenfy(self, data):
         global CONET_TOKEN
         if data['token'] != CONET_TOKEN[self.cmdid]:return False
+        print('Token OK')
         if not POLS[self.cmdid].Idenfy(data['uid'], data['pwd']):return False
         return True
 
@@ -117,7 +127,9 @@ class CoreTree(StreamRequestHandler):
 class Tree:
     def __init__(self, idf=Idenfaction()):
         self.meth = {}
+        self.mdes = {}
         self.idf  = idf
+        self.extension(InfoSupport)
 
     def command(self, cmd=None):
         def decorator(func):
@@ -127,12 +139,14 @@ class Tree:
     
     def extension(self, ext):
         for name in dir(ext):
+            if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
+            self.mdes[name] = getattr(ext, 'description').get(name, [])
     
     def run(self, ip:str, port:int, token:str=None):
         if token:self.token = token
-        CONET_TOKEN[port] = token
+        CONET_TOKEN[port] = self.token
         COMMANDS[port]    = self.meth
         POLS[port]        = self.idf
         addr = (ip, port)
