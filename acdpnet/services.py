@@ -7,6 +7,7 @@ import json
 CONET_TOKEN = {}
 COMMANDS    = {}
 POLS        = {}
+METH_DESCR  = {}
 
 class Idenfaction:
     clearifiction = {
@@ -29,7 +30,7 @@ class Idenfaction:
     def GetInfo(self):
         data = []
         for conet in self.activite:
-            info = clearify(conet.Idata, self.clearifiction['descr'])
+            info = clearify(conet.Idata, self.clearifiction['descr'])[0]
             data.append(info)
         return data
 
@@ -88,7 +89,9 @@ class CoreTree(StreamRequestHandler):
         if not passable:return
         try:
             res = {
-                'meth':list(COMMANDS[self.cmdid].keys())
+                'meth':METH_DESCR[self.cmdid],
+                'name':'Tree',
+                'version':VERS,
             }
             self.conet.sendata(res)
         except:
@@ -116,7 +119,9 @@ class CoreTree(StreamRequestHandler):
                 self.conet.idf = POLS[self.cmdid]
                 COMMANDS[self.cmdid][data['command']](self.conet)
             else:
-                pass
+                self.conet.sendata({
+                    'resp':'command unavailable'
+                })
 
 
     def finish(self):
@@ -142,13 +147,14 @@ class Tree:
             if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
-            self.mdes[name] = getattr(ext, 'description').get(name, [])
+            self.mdes[name] = getattr(ext, 'description').get(name, {})
     
     def run(self, ip:str, port:int, token:str=None):
         if token:self.token = token
         CONET_TOKEN[port] = self.token
         COMMANDS[port]    = self.meth
         POLS[port]        = self.idf
+        METH_DESCR[port]  = self.mdes
         addr = (ip, port)
         server = ThreadingTCPServer(addr, CoreTree)
         server.serve_forever()

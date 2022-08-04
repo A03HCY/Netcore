@@ -50,12 +50,11 @@ class BasicNode:
     
     def idenfy(self):
         self.conet.Idata.update({
-            'meth':dict(zip(list(self.meth.keys()), self.mdes)),
+            'meth':self.mdes,
         })
         self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['setup'])[0])
         self.conet.sendata(clearify(self.conet.Idata, self.clearifiction['descr'])[0])
         self.server = self.conet.recvdata()
-        print(self.server)
     
     def close(self):
         self.conet.close()
@@ -78,7 +77,7 @@ class ExtensionSupportNode(BasicNode):
             if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
-            self.mdes[name] = getattr(ext, 'description').get(name, [])
+            self.mdes[name] = getattr(ext, 'description').get(name, {})
     
     def command(self, cmd:str='None'):
         def decorator(func):

@@ -7,7 +7,8 @@ import json
 import random 
 import string
 import secrets
-
+import os
+import time
 
 VERS = '2.1.3'
 __version__ = VERS
@@ -166,11 +167,9 @@ class Conet:
     def force_send(self, bytesdata=b''):
         safe = RanCode(4)
         self.que.put(safe)
-        print('New code', safe)
         self.conn.send(bytesdata)
         self.que.get()
         self.que.task_done()
-        print('Task done', safe)
     
     def force_recv(self, num):
         return self.conn.recv(num)
@@ -203,7 +202,18 @@ class Conet:
         if protocal:return data
         else:return data.meta
     
-    def recvdata(self):
+    def recvdata(self, timeout=0):
+        if timeout != 0:
+            self.conn.settimeout(timeout)
+            try:
+                data = self.recv()
+                data = data.decode('utf-8')
+                data = json.loads(data)
+            except:
+                data = {}
+            self.conn.setblocking(True)
+            return data
+        self.conn.setblocking(True)
         data = self.recv()
         data = data.decode('utf-8')
         data = json.loads(data)
@@ -248,3 +258,44 @@ def clearify(org, dic, defult=None):
         if not i in org:passable = False
         res[i] = org.get(i, defult)
     return res, passable
+
+
+class List:
+    def __init__(self, path:str):
+        self.path = path
+        self.table = []
+        self.Do()
+    
+    def Do(self):
+        path  = os.path.abspath(self.path)
+        dirs  = []
+        files = []
+        for i in os.listdir(path):
+            full = os.path.join(path, i)
+            if os.path.isdir(full):
+                dirs.append(i)
+            elif os.path.isfile(full):
+                files.append(i)
+        for i in dirs:
+            p = os.path.join(path, i)
+            self.table.append(list(
+                (i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
+            ))
+        for i in files:
+            p = os.path.join(path, i)
+            size = self.convert_size(os.path.getsize(p))
+            self.table.append(list(
+                (i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
+            ))
+    
+    def convert_size(self, text):
+        units = [" B", "KB", "MB", "GB", "TB", "PB"]
+        size = 1024
+        for i in range(len(units)):
+            if (text/ size) < 1:
+                return "%.2f %s" % (text, units[i])
+            text = text/ size
+    
+    def time(self, path):
+        data = time.localtime(os.stat(path).st_mtime)
+        return time.strftime("%Y-%m-%d %H:%M", data)
