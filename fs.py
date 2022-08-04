@@ -1,14 +1,11 @@
 from acdpnet.nodes import ExtensionSupportNode
 from acdpnet.extension.transfer import FilesNodes
 
-app = ExtensionSupportNode('A03HCY', '')
-
-app.conet.Idata.update({
-    'mac':'fs'
-})
-
-app.extension(FilesNodes)
-
-app.connect(('localhost', 1035), '')
-
-app.run()
+while True:
+    app = ExtensionSupportNode('A03HCY', '')
+    app.extension(FilesNodes)
+    app.conet.Idata.update({
+        'mac':'fs'
+    })
+    app.connect(('localhost', 1035), '')
+    app.run()

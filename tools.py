@@ -10,7 +10,7 @@ import secrets
 import os
 import time
 
-VERS = '2.2.0'
+VERS = '2.1.3'
 __version__ = VERS
 
 
@@ -304,7 +304,7 @@ class RemoteGet:
     def __init__(self, conet:Conet):
         self.conet = conet
         self.conn = self.conet.conn
-        self.buff = 8192
+        self.buff = 2048
     
     def To(self, f):
         self.f = f
@@ -364,7 +364,6 @@ class RemoteGet:
             
             length = ReadHead(header)[3]
             task = progress.add_task("[green3]Trans", total=length)
-            progress.update(task, advance=0)
             recvdata = 0
             while recvdata < length:
                 if length - recvdata > self.buff:

@@ -100,15 +100,3 @@ class ExtensionSupportNode(BasicNode):
                 self.meth[data['command']](self.conet)
             else:
                 pass
-
-
-class T:
-    def hi(conet:Conet):
-        data = conet.get('data')
-        print(data)
-        data['command'] = 'multi_cmd_res'
-        res = {
-            'command':'multi_cmd',
-            'data':data
-        }
-        conet.sendata(res)

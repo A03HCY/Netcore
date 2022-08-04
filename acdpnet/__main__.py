@@ -7,16 +7,12 @@ from rich          import box
 from rich.tree     import Tree
 from rich.pretty   import pprint
 from acdpnet.nodes import ExtensionSupportNode
-from acdpnet.tools import Conet
+from acdpnet.tools import Conet, RemoteGet
 from acdpnet       import extension
 import acdpnet
 import platform
 import os, sys, time
 
-'''
-from rich.traceback import install
-install(show_locals=True)
-'''
 
 class Prompt(Prompt):prompt_suffix = ''
 
@@ -143,6 +139,8 @@ class Newmore:
             self.ls(cmd)
         elif cmd[0] == 'cd':
             self.cd(cmd)
+        elif cmd[0] == 'get':
+            self.get(cmd)
         elif cmd[0] == 'extension':
             if cmd[1] == '-c':
                 pprint(self.meth, expand_all=True, console=console)
@@ -160,7 +158,6 @@ class Newmore:
             res = self.conet.conet.recvdata(timeout=num)
             pprint(res, expand_all=True, console=console)
         elif cmd[0] == 'exit':
-            self.conet.close()
             print('Disremoted from', self.sname, '\n')
             return
         else:
@@ -189,6 +186,24 @@ class Newmore:
         resp = self.conet.recv()
         data = self.conet.recv()
     
+    def get(self, cmd):
+        name = str(cmd[1])
+        if name == '':name = input('File: ')
+        data = {
+            'name':name
+        }
+        self.send('get', data=data)
+        resp = self.conet.recv()
+        data = self.conet.recv().get('data', {})
+        print(data)
+        if data.get('resp') != 'OK':
+            print(data)
+            return
+        with open(os.path.join(os.getcwd(), name), 'wb') as f:
+            print(os.path.join(os.getcwd(), name))
+            target = RemoteGet(self.conet.conet).To(f)
+            target.Now_Progress(console)
+    
     def ls(self, cmd):
         path = str(cmd[1])
         if path == '':path = './'
@@ -216,9 +231,6 @@ class Newmore:
             print(data['resp'])
         else:
             pprint(data, expand_all=True, console=console)
-
-    
-    # conet A03HCY@mhs.cool:1035
 
 class Newclient:
     def __init__(self, name:str, ip:str, port:str):
@@ -338,7 +350,7 @@ class Newclient:
         try:
             Newmore(self.conet, info)
         except:
-            print('[bold red]Disconnected from server\n')
+            print('[bold red]Disconnected from '+info.get('name', 'Remote Node')+'@'+info.get('mac', 'mac')+'\n')
     
     def lis(self, cmd, rd=False):
         if not 'activities' in list(self.meth.keys()):
@@ -430,10 +442,16 @@ class App:
             else:pass
         except KeyboardInterrupt:
             print('[bold red]Canceled by user\n')
-
+        
+        if cmd[0] == 'ct':
+            cmd = 'conet A03HCY@mhs.cool:1035'.split(' ')
+            try:
+                self.meth[cmd[0]](cmd[1:])
+            except KeyboardInterrupt:
+                print('[bold red]Canceled by user\n')
+        
         if cmd[0] == 'clear':
             self.clear()
-
         if cmd[0] == 'exit':
             return
         elif cmd[0] == 're':
