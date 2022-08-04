@@ -5,7 +5,7 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setuptools.setup(
     name="acdpnet",
-    version="2.1.3",
+    version="2.2.1",
     author="Aiden Hopkins",
     author_email="acdphc@qq.com",
     description="A TCP Services Frame",
