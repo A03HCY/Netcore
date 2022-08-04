@@ -9,10 +9,12 @@ from rich.pretty   import pprint
 from acdpnet.nodes import ExtensionSupportNode
 from acdpnet.tools import Conet, RemoteGet
 from acdpnet       import extension
+from PIL           import Image
 import acdpnet
 import platform
 import os, sys, time
-
+import ast, io
+import matplotlib.pyplot as plt
 
 class Prompt(Prompt):prompt_suffix = ''
 
@@ -41,9 +43,9 @@ class TreeExtension:
     def __init__(self, data:dict, title:str=None):
         self.data = data
         if not title:
-            root = Tree("[bold]▣ Core Extension", highlight=True)
+            root = Tree("[bold]🗃️ Core Extension", highlight=True)
         else :
-            root = Tree("[bold]▣ "+title, highlight=True)
+            root = Tree("[bold]🗃️ "+title, highlight=True)
         for filename in self.data.keys():
             fnode = root.add("📁 "+filename)
             for cla in data[filename]:
@@ -88,13 +90,13 @@ class List:
         for i in dirs:
             p = os.path.join(path, i)
             self.table.add_row(
-                i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-'
+                "📁 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-'
             )
         for i in files:
             p = os.path.join(path, i)
             size = self.convert_size(os.path.getsize(p))
             self.table.add_row(
-                i, oct(os.stat(p).st_mode)[-3:], self.time(p), size
+                "📄 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), size
             )
     
     def convert_size(self, text):
@@ -127,7 +129,7 @@ class Newmore:
             cmd = input('[green3]'+self.name+'@ [/green3][dodger_blue1]'+self.sname+'~'+self.spath.replace('\\', '/')+'[/dodger_blue1] [bold]$[/bold] ', console=console).split(' ')
             cmd.append('')
         except KeyboardInterrupt or UnboundLocalError:
-            print('[bold red]Ctrl-C\nDisremote by "exit"\n')
+            print('[bold red]Ctrl-C\nDisremote by "exit"')
             self.console()
             return
         
@@ -141,6 +143,8 @@ class Newmore:
             self.cd(cmd)
         elif cmd[0] == 'get':
             self.get(cmd)
+        elif cmd[0] == 'screenprint':
+            self.sprint(cmd)
         elif cmd[0] == 'extension':
             if cmd[1] == '-c':
                 pprint(self.meth, expand_all=True, console=console)
@@ -186,6 +190,26 @@ class Newmore:
         resp = self.conet.recv()
         data = self.conet.recv()
     
+    def sprint(self, cmd):
+        self.send('screenprint')
+        resp = self.conet.recv()
+        data = self.conet.recv(timeout=5).get('data', {})
+        temp = data.get('resp', '')
+        if temp == '':
+            print('❌ Not Support')
+            return
+        try:
+            temp = ast.literal_eval(temp)
+        except:
+            print('❌ Cannot read')
+            return
+        if not type(temp) == bytes:
+            print('❌ Cannot read')
+            return
+        temp = io.BytesIO(temp)
+        temp = Image.open(temp)
+        temp.show()
+    
     def get(self, cmd):
         name = str(cmd[1])
         if name == '':name = input('File: ')
@@ -218,7 +242,7 @@ class Newmore:
     def handle(self, command):
         cmd = command[0]
         if not cmd in list(self.meth.keys()):
-            print('Not Available', '\n')
+            print('Not Available')
             return
         args = self.meth[cmd].get('args', [{}])
         data = {}
@@ -253,27 +277,25 @@ class Newclient:
     
     def start(self):
         if not self.alive():
-            print('[bold red]Service is not available\n')
+            print('❌ Service is not available\n')
             return
         else:
             tested = 1
             while tested <= 3:
-                self.token = input('Token      : ', console=console, password=False)
-                self.pwd = input('Password   : ', console=console, password=False)
+                self.token = input('Token      : ', console=console, password=True)
+                self.pwd = input('Password   : ', console=console, password=True)
                 self.conet = ExtensionSupportNode(self.name, self.pwd)
                 try:
                     self.conet.connect((self.ip, int(self.port)), self.token)
                     break
-                except:
-                    if tested < 3:print('[yellow]Token or Passwork is not correct')
-                if tested == 3:
-                    print('[bold red]Token or Passwork is not correct\n')
-                    return
+                except:pass
+                print('🔒 Token or Passwork is not correct')
+                if tested == 3:return
                 tested += 1
         self.sname = self.conet.server.get('name', 'Unknow Server')
         self.svers = self.conet.server.get('version', 'Unknow Version')
         self.meth  = self.conet.server.get('meth', {})
-        print('\nService Version:', self.svers, '\tServer Name:', self.sname, '\n')
+        print('\n🟢 Service Version:', self.svers, '\tServer Name:', self.sname, '\n')
         self.console()
     
     def alive(self):
@@ -291,7 +313,7 @@ class Newclient:
             cmd = input('[green3]'+self.name+'@ [/green3][dodger_blue1]'+self.sname+'[/dodger_blue1] [bold]#[/bold] ', console=console).split(' ')
             cmd.append('')
         except KeyboardInterrupt or UnboundLocalError:
-            print('[bold red]Ctrl-C\nDisconnect by "exit"\n')
+            print('[bold red]Ctrl-C\nDisconnect by "exit"')
             self.console()
             return
 
@@ -350,7 +372,7 @@ class Newclient:
         try:
             Newmore(self.conet, info)
         except:
-            print('[bold red]Disconnected from '+info.get('name', 'Remote Node')+'@'+info.get('mac', 'mac')+'\n')
+            print('[bold red]🔴 Disconnected from '+info.get('name', 'Remote Node')+'@'+info.get('mac', 'mac')+'\n')
     
     def lis(self, cmd, rd=False):
         if not 'activities' in list(self.meth.keys()):
@@ -366,7 +388,7 @@ class Newclient:
             table.add_column("Name", justify="center")
             table.add_column("OS", justify="center")
             table.add_column("Mac", justify="center")
-            table.add_column("Version", justify="center")
+            table.add_column("Version", justify="center", style="green3")
             table.add_column("Group", justify="center")
             table.add_column("Service Support", justify="center", style="dodger_blue1")
             for i in data:
@@ -387,7 +409,7 @@ class Newclient:
     def handle(self, command):
         cmd = command[0]
         if not cmd in list(self.meth.keys()):
-            print('Not Available', '\n')
+            print('Not Available')
             return
         args = self.meth[cmd].get('args', [{}])
         data = {}
@@ -432,7 +454,7 @@ class App:
             cmd = input('[green3]'+self.name+'@ [/green3][dodger_blue1]'+os.getcwd().replace('\\', '/')+'[/dodger_blue1] [bold]#[/bold] ', console=console).split(' ')
             cmd.append('')
         except KeyboardInterrupt or UnboundLocalError:
-            print('[bold red]Ctrl-C\nExit by "exit"\n')
+            print('[bold red]Ctrl-C\nExit by "exit"')
             self.console()
             return
 
@@ -443,19 +465,25 @@ class App:
         except KeyboardInterrupt:
             print('[bold red]Canceled by user\n')
         
+        '''
         if cmd[0] == 'ct':
             cmd = 'conet A03HCY@mhs.cool:1035'.split(' ')
             try:
                 self.meth[cmd[0]](cmd[1:])
             except KeyboardInterrupt:
                 print('[bold red]Canceled by user\n')
+        '''
         
         if cmd[0] == 'clear':
             self.clear()
         if cmd[0] == 'exit':
             return
         elif cmd[0] == 're':
-            os.system('python -m acdpnet')
+            try:
+                os.system('python -m acdpnet')
+            except KeyboardInterrupt:
+                print('[bold red]Canceled by user\n')
+            except:pass
         else:
             self.console()
 
@@ -467,13 +495,29 @@ class Command:
             res = List(path)
             print(res.table)
         except:
-            print('[bold red]Path is not available')
+            print('Path is not available')
     
     def cd(data):
         path = str(data[0])
         if path == '':path = './'
         try:os.chdir(path)
         except:pass
+    
+    def server(data):
+        try:
+            os.system('python -m acdpnet.server')
+        except KeyboardInterrupt:
+            print('[bold red]Canceled by user\n')
+        except:
+            print('Failed to start a server programe')
+    
+    def filenode(data):
+        try:
+            os.system('python -m acdpnet.filenode')
+        except KeyboardInterrupt:
+            print('[bold red]Canceled by user\n')
+        except:
+            print('Failed to start a server programe')
     
     def conet(data):
         args = data[0]
@@ -491,12 +535,12 @@ class Command:
         if port == '':
             port = input('Remote Port: ')
         if not port.isnumeric():
-            print('[bold red]Remote Port Error\n')
+            print('Remote Port Error\n')
             return
         try:
             Newclient(name, ip, port)
         except:
-            print('[bold red]Disconnected from server\n')
+            print('[bold red]🔴 Disconnected from server\n')
     
     def extension(data):
         info = GetExtension()

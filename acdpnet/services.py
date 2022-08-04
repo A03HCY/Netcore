@@ -8,6 +8,7 @@ CONET_TOKEN = {}
 COMMANDS    = {}
 POLS        = {}
 METH_DESCR  = {}
+NAME        = {}
 
 class Idenfaction:
     clearifiction = {
@@ -90,7 +91,7 @@ class CoreTree(StreamRequestHandler):
         try:
             res = {
                 'meth':METH_DESCR[self.cmdid],
-                'name':'Tree',
+                'name':NAME[self.cmdid],
                 'version':VERS,
             }
             self.conet.sendata(res)
@@ -130,10 +131,11 @@ class CoreTree(StreamRequestHandler):
 
 
 class Tree:
-    def __init__(self, idf=Idenfaction()):
+    def __init__(self, name:str='Tree', idf=Idenfaction()):
         self.meth = {}
         self.mdes = {}
         self.idf  = idf
+        self.name = name
         self.extension(InfoSupport)
 
     def command(self, cmd=None):
@@ -155,6 +157,7 @@ class Tree:
         COMMANDS[port]    = self.meth
         POLS[port]        = self.idf
         METH_DESCR[port]  = self.mdes
+        NAME[port]        = self.name
         addr = (ip, port)
         server = ThreadingTCPServer(addr, CoreTree)
         server.serve_forever()

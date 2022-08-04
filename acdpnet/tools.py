@@ -10,7 +10,7 @@ import secrets
 import os
 import time
 
-VERS = '2.2.0'
+VERS = '2.2.1'
 __version__ = VERS
 
 
@@ -279,13 +279,13 @@ class List:
         for i in dirs:
             p = os.path.join(path, i)
             self.table.append(list(
-                (i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
+                ("📁 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
             ))
         for i in files:
             p = os.path.join(path, i)
             size = self.convert_size(os.path.getsize(p))
             self.table.append(list(
-                (i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
+                ("📄 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
             ))
     
     def convert_size(self, text):

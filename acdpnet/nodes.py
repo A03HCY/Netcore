@@ -59,8 +59,8 @@ class BasicNode:
     def close(self):
         self.conet.close()
     
-    def recv(self) -> dict:
-        data = self.conet.recvdata()
+    def recv(self, timeout=0) -> dict:
+        data = self.conet.recvdata(timeout=timeout)
         return data
     
     def send(self, command:str, data:dict={}):
