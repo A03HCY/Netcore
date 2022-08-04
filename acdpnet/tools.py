@@ -7,9 +7,10 @@ import json
 import random 
 import string
 import secrets
+import os
+import time
 
-
-VERS = '2.1.3'
+VERS = '2.2.1'
 __version__ = VERS
 
 
@@ -166,11 +167,9 @@ class Conet:
     def force_send(self, bytesdata=b''):
         safe = RanCode(4)
         self.que.put(safe)
-        print('New code', safe)
         self.conn.send(bytesdata)
         self.que.get()
         self.que.task_done()
-        print('Task done', safe)
     
     def force_recv(self, num):
         return self.conn.recv(num)
@@ -203,7 +202,18 @@ class Conet:
         if protocal:return data
         else:return data.meta
     
-    def recvdata(self):
+    def recvdata(self, timeout=0):
+        if timeout != 0:
+            self.conn.settimeout(timeout)
+            try:
+                data = self.recv()
+                data = data.decode('utf-8')
+                data = json.loads(data)
+            except:
+                data = {}
+            self.conn.setblocking(True)
+            return data
+        self.conn.setblocking(True)
         data = self.recv()
         data = data.decode('utf-8')
         data = json.loads(data)
@@ -248,3 +258,121 @@ def clearify(org, dic, defult=None):
         if not i in org:passable = False
         res[i] = org.get(i, defult)
     return res, passable
+
+
+class List:
+    def __init__(self, path:str):
+        self.path = path
+        self.table = []
+        self.Do()
+    
+    def Do(self):
+        path  = os.path.abspath(self.path)
+        dirs  = []
+        files = []
+        for i in os.listdir(path):
+            full = os.path.join(path, i)
+            if os.path.isdir(full):
+                dirs.append(i)
+            elif os.path.isfile(full):
+                files.append(i)
+        for i in dirs:
+            p = os.path.join(path, i)
+            self.table.append(list(
+                ("📁 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
+            ))
+        for i in files:
+            p = os.path.join(path, i)
+            size = self.convert_size(os.path.getsize(p))
+            self.table.append(list(
+                ("📄 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
+            ))
+    
+    def convert_size(self, text):
+        units = [" B", "KB", "MB", "GB", "TB", "PB"]
+        size = 1024
+        for i in range(len(units)):
+            if (text/ size) < 1:
+                return "%.2f %s" % (text, units[i])
+            text = text/ size
+    
+    def time(self, path):
+        data = time.localtime(os.stat(path).st_mtime)
+        return time.strftime("%Y-%m-%d %H:%M", data)
+
+class RemoteGet:
+    def __init__(self, conet:Conet):
+        self.conet = conet
+        self.conn = self.conet.conn
+        self.buff = 8192
+    
+    def To(self, f):
+        self.f = f
+        return self
+
+    def Now(self, func=None):
+        data = BasicProtocol()
+        header = b''
+        while len(header) < 10:
+            temp = self.conn.recv(1)
+            header += temp
+            if temp == b'':break
+        
+        length = ReadHead(header)[3]
+        recvdata = 0
+        while recvdata < length:
+            if length - recvdata > self.buff:
+                temp = self.conn.recv(self.buff)
+                recvdata += len(temp)
+            else:
+                temp = self.conn.recv(length - recvdata)
+                recvdata += len(temp)
+            self.f.write(temp)
+            if temp == b'':break
+
+    def Now_Progress(self, console):
+        from rich.console  import Console, Group
+        from rich.progress import Progress
+        from rich.progress import (
+            BarColumn,
+            DownloadColumn,
+            Progress,
+            SpinnerColumn,
+            TaskProgressColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+            TransferSpeedColumn,
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            "{task.description}",
+            BarColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            data = BasicProtocol()
+            header = b''
+            while len(header) < 10:
+                temp = self.conn.recv(1)
+                header += temp
+                if temp == b'':break
+            
+            length = ReadHead(header)[3]
+            task = progress.add_task("[green3]Trans", total=length)
+            progress.update(task, advance=0)
+            recvdata = 0
+            while recvdata < length:
+                if length - recvdata > self.buff:
+                    temp = self.conn.recv(self.buff)
+                else:
+                    temp = self.conn.recv(length - recvdata)
+                pros = len(temp)
+                recvdata += pros
+                progress.update(task, advance=pros)
+                self.f.write(temp)
+                if temp == b'':break

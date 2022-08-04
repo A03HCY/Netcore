@@ -1,13 +1,20 @@
 from socketserver import ThreadingTCPServer, StreamRequestHandler
 from acdpnet.tools import *
+from acdpnet.extension.transfer import InfoSupport
 import json
 
 
 CONET_TOKEN = {}
 COMMANDS    = {}
 POLS        = {}
+METH_DESCR  = {}
+NAME        = {}
 
 class Idenfaction:
+    clearifiction = {
+        'descr':['mac', 'os', 'version', 'name', 'meth', 'uid'],
+    }
+
     def __init__(self):
         self.activite = []
         self.acessuid = {}
@@ -21,8 +28,12 @@ class Idenfaction:
         else:
             return False
 
-    def GetInfo(self, account:str):
-        pass
+    def GetInfo(self):
+        data = []
+        for conet in self.activite:
+            info = clearify(conet.Idata, self.clearifiction['descr'])[0]
+            data.append(info)
+        return data
 
     def UniqueMacTest(self, mac:str):
         Unique = True
@@ -52,6 +63,7 @@ class CoreTree(StreamRequestHandler):
     def idenfy(self, data):
         global CONET_TOKEN
         if data['token'] != CONET_TOKEN[self.cmdid]:return False
+        print('Token OK')
         if not POLS[self.cmdid].Idenfy(data['uid'], data['pwd']):return False
         return True
 
@@ -78,7 +90,9 @@ class CoreTree(StreamRequestHandler):
         if not passable:return
         try:
             res = {
-                'meth':list(COMMANDS[self.cmdid].keys())
+                'meth':METH_DESCR[self.cmdid],
+                'name':NAME[self.cmdid],
+                'version':VERS,
             }
             self.conet.sendata(res)
         except:
@@ -106,7 +120,9 @@ class CoreTree(StreamRequestHandler):
                 self.conet.idf = POLS[self.cmdid]
                 COMMANDS[self.cmdid][data['command']](self.conet)
             else:
-                pass
+                self.conet.sendata({
+                    'resp':'command unavailable'
+                })
 
 
     def finish(self):
@@ -115,9 +131,12 @@ class CoreTree(StreamRequestHandler):
 
 
 class Tree:
-    def __init__(self, idf=Idenfaction()):
+    def __init__(self, name:str='Tree', idf=Idenfaction()):
         self.meth = {}
+        self.mdes = {}
         self.idf  = idf
+        self.name = name
+        self.extension(InfoSupport)
 
     def command(self, cmd=None):
         def decorator(func):
@@ -127,14 +146,18 @@ class Tree:
     
     def extension(self, ext):
         for name in dir(ext):
+            if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
+            self.mdes[name] = getattr(ext, 'description').get(name, {})
     
     def run(self, ip:str, port:int, token:str=None):
         if token:self.token = token
-        CONET_TOKEN[port] = token
+        CONET_TOKEN[port] = self.token
         COMMANDS[port]    = self.meth
         POLS[port]        = self.idf
+        METH_DESCR[port]  = self.mdes
+        NAME[port]        = self.name
         addr = (ip, port)
         server = ThreadingTCPServer(addr, CoreTree)
         server.serve_forever()
