@@ -141,6 +141,7 @@ class Tree:
     def command(self, cmd=None):
         def decorator(func):
             self.meth[cmd] = func
+            self.mdes[cmd] = {}
             return func
         return decorator
     
@@ -149,7 +150,11 @@ class Tree:
             if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
-            self.mdes[name] = getattr(ext, 'description').get(name, {})
+            if 'description' in dir(ext):
+                self.mdes[name] = getattr(ext, 'description').get(name, {})
+            else:
+                self.mdes[name] = {}
+            
     
     def run(self, ip:str, port:int, token:str=None):
         if token:self.token = token

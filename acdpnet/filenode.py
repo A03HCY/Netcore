@@ -26,11 +26,12 @@ if __name__ == '__main__':
     except:pass
 
     while True:
+        uni = RanCode(4)
         app = ExtensionSupportNode(uid, pwd)
         app.extension(FilesNodes)
         app.extension(ScreenNodes)
         app.conet.Idata.update({
-            'mac':GetMac()+'-FileNode-'+RanCode(4)
+            'mac':GetMac()+'-FileNode-'+uni
         })
         app.extension(FilesNodes)
         app.extension(ScreenNodes)
@@ -42,5 +43,7 @@ if __name__ == '__main__':
             time.sleep(30)
             continue
         
-        try:app.run()
+        try:
+            print(uni)
+            app.run()
         except:pass

@@ -1,8 +1,26 @@
 from acdpnet.tools    import *
 from acdpnet.services import *
+from acdpnet.nodes    import *
 import os
 import shutil
 import pathlib
+import ast
+
+
+class RemoteConnection(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
+
+
+class RemoteSystem(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
 
 
 class InfoSupport:
@@ -182,12 +200,29 @@ class FilesNodes:
             }],
             'resp':'Type:Dict'
         },
+        'fileraw':{
+            'desc':'Read / Write raw data',
+            'args':[{
+                'path':'Type:String filename at pwd',
+                'mode':'Type:String mode',
+                'seek':'Type:Int',
+                'buff':'Type:Int',
+                'raw_':'write mode, raw data'
+            }],
+            'resp':'Type:Dict'
+        },
     }
 
     def ls(conet:Conet):
         data = conet.get('data')
         path = data.get('path', './')
-        data['resp'] = List(path).table
+        raw  = data.get('raw', 'False')
+        if raw == 'True':raw = True
+        else:raw = False
+        try:
+            data['resp'] = List(path, raw).table
+        except:
+            data['resp'] = 'Error'
         resp = {
             'command':'multi_cmd',
             'data':data
@@ -211,6 +246,18 @@ class FilesNodes:
         data = conet.get('data')
         path = os.getcwd()
         data['resp'] = path
+        resp = {
+            'command':'multi_cmd',
+            'data':data
+        }
+        conet.sendata(resp)
+    
+    def getsize(conet:Conet):
+        data = conet.get('data')
+        path = data.get('path', '')
+        try:size = os.path.getsize(path)
+        except:size = -1
+        data['resp'] = size
         resp = {
             'command':'multi_cmd',
             'data':data
@@ -271,10 +318,55 @@ class FilesNodes:
         }
         conet.sendata(resp)
     
+    def fileraw(conet:Conet):
+        data = conet.get('data')
+        path = data.get('path', '')
+        mode = data.get('mode', 'rb')
+        code = data.get('code', 'utf-8')
+        seek = data.get('seek', 0)
+        buff = data.get('buff', 0)
+        raw_ = data.get('raw_', '')
+        if not os.path.isfile(path):
+            data['resp'] = 'Connot be found'
+            resp = {
+                'command':'multi_cmd',
+                'data':data
+            }
+            conet.sendata(resp)
+            return
+        
+        if not 'b' in mode:
+            with open(path, mode, encoding=code) as f:
+                f.read(seek)
+                if 'w' in mode:
+                    f.write(raw_)
+                    temp = 'OK'
+                else:
+                    temp = str(f.read(buff))
+        else:
+            with open(path, mode) as f:
+                f.seek(seek)
+                if 'w' in mode:
+                    f.write(ast.literal_eval(raw_))
+                    temp = 'OK'
+                else:
+                    temp = str(f.read(buff))
+        
+        data['resp'] = temp
+        resp = {
+            'command':'multi_cmd',
+            'data':data
+        }
+        conet.sendata(resp)
+
+    
     def get(conet:Conet):
         data = conet.get('data')
         name = data.get('name', 'file.unknow')
-        path = os.path.join(os.getcwd(), name)
+        path = data.get('path', 'file.unknow')
+        if path == 'file.unknow':
+            path = os.path.join(os.getcwd(), name)
+        data['f_path'] = path
         if not os.path.isfile(path):
             data['resp'] = 'Connot be found'
             resp = {
@@ -296,26 +388,219 @@ class FilesNodes:
         header = prot.GetHead(length=size)
 
         with open(path, 'rb') as f:
-            resp = {
-                'command':'flow_trans',
-                'data':data
-            }
-            conet.sendata(resp)
-            conet.que.put(RanCode(4))
-            conn = conet.conn
-            conn.send(header)
-            
-            length = size
-            sended = 0
-            buff   = 8192
-            while sended < length:
-                if length - sended > buff:
-                    temp = f.read(buff)
-                    sended += len(temp)
-                else:
-                    temp = f.read(length - sended)
-                    sended += len(temp)
-                conn.send(temp)
-            
-            conet.que.get()
-            conet.que.task_done()
+            tar = RemotePush(data).From(f)
+            tar.Now(conet)
+
+
+class Local:
+    def __init__(self, path):
+        self.path = path
+
+
+class RemoteFileObject:
+    def __init__(self, rfs, path, mode, encoding='utf-8'):
+        self.rfs  = rfs
+        self.path = path
+        self.mode = mode
+        self.code = encoding
+        self.size = 0
+        self.now  = 0
+
+        if not self.rfs.path.isfile(path):
+            raise RemoteSystem('File cannot be found.')
+        self.size = self.rfs.path.getsize(path)
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def seek(self, ran):
+        if ran <= self.size:
+            self.now = ran
+
+    def read(self, size=None):
+        if not self.mode in ['r', 'rb']:
+            return
+        
+        if size == None:
+            size = self.size - self.now
+        elif size + self.now > self.size:
+            raise RemoteSystem('File Limited.')
+
+        data = {
+            'path':self.path,
+            'seek':self.now,
+            'code':self.code,
+            'mode':self.mode,
+            'buff':size,
+        }
+        self.rfs.send('fileraw', data=data)
+        resp = self.rfs.node.recv(timeout=10)
+        data = self.rfs.node.recv(timeout=10).get('data', {}).get('resp', 'ReadError')
+        if data == 'Connot be found' or data == 'ReadError':
+            return 'Error'
+        if self.mode == 'rb':data = ast.literal_eval(data)
+        self.now += size
+        return data
+
+    def write(self, data):
+        if not self.mode in ['w', 'wb', 'w+', 'wb+']:
+            return
+        
+        if 'b' in self.mode and type(data) != bytes:
+            return
+        elif type(data) != str:
+            return
+
+        data = {
+            'path':self.path,
+            'seek':self.now,
+            'code':self.code,
+            'mode':self.mode,
+            'buff':size,
+            'raw_':str(data)
+        }
+        self.rfs.send('fileraw', data=data)
+        resp = self.rfs.node.recv(timeout=10)
+        data = self.rfs.node.recv(timeout=10).get('data', {}).get('resp', 'ReadError')
+        if data == 'Connot be found' or data == 'ReadError' or data!= 'OK':
+            return 'Error'
+        
+        return data
+    
+    def close(self):
+        pass
+
+    def save(self, local):
+        data = {
+            'path':self.path
+        }
+        self.rfs.send('get', data=data)
+        resp = self.rfs.node.recv(timeout=10)
+        data = self.rfs.node.recv(timeout=10).get('data', {})
+        print(data)
+        if data.get('resp') != 'OK':
+            return
+        with open(local, 'wb') as f:
+            target = RemoteGet(self.rfs.node.conet).To(f)
+            target.Now()
+        
+    def push(self, local, remote):
+        pass
+
+
+class RemotePath:
+    def __init__(self, rfs):
+        self.rfs = rfs
+    
+    def exists(self, path):
+        r_path, r_name = os.path.split(path)
+        try:
+            data = self.rfs.listdir(r_path)
+        except:return False
+        if r_name in data:return True
+        else:return False
+
+    def istype(self, path, tell):
+        r_path, r_name = os.path.split(path)
+        try:
+            data = self.rfs.metadir(r_path)
+        except:return False
+        if r_name == '' and tell == 'D':return True
+        res = []
+        for i in data:
+            if i[0] == r_name:
+                res = i
+                break
+        if res == []:return False
+        return i[-1] == tell
+
+    def isfile(self, path):
+        return self.istype(path, 'F')
+
+    def isdir(self, path):
+        return self.istype(path, 'D')
+    
+    def getsize(self, path):
+        data = {
+            'path':path
+        }
+        self.rfs.send('getsize', data=data)
+        resp = self.rfs.node.recv(timeout=10)
+        data = self.rfs.node.recv(timeout=10).get('data', {}).get('resp')
+        return data
+    
+    def copy(self, fm, to):
+        if type(fm) == Local and type(to) == Local:
+            return
+        
+        if type(fm) == Local:
+            # push
+            pass
+        elif type(to) == Local:
+            # get
+            pass
+        else:
+            # mv
+            pass
+
+
+class RemoteFileSystem(RemoteExtension):
+    def setup(self):
+        self.path = RemotePath(self)
+    
+    def online(self):
+        self.node.send('activities')
+        data = self.node.recv()
+        return data
+    
+    def metadir(self, path):
+        if path == '':path = './'
+        data = {
+            'path':path,
+            'raw' :'True'
+        }
+        self.send('ls', data=data)
+        resp = self.node.recv(timeout=10)
+        data = self.node.recv(timeout=10).get('data', {}).get('resp', 'Error')
+        if data == 'Error':
+            raise RemoteSystem('Path is not exists')
+        return data
+    
+    def listdir(self, path:str):
+        data = self.metadir(path)
+        ls = []
+        for i in data:
+            ls.append(i[0])
+        return ls
+    
+    def getcwd(self):
+        self.send('pwd')
+        resp = self.node.recv(timeout=10)
+        path = self.node.recv(timeout=10).get('data', {}).get('resp', '')
+        self.now_path = path
+        return path
+    
+    def remove(self, path:str='None'):
+        data = {
+            'path':path
+        }
+        self.send('rm', data=data)
+        resp = self.node.recv(timeout=10)
+        data = self.node.recv(timeout=10).get('data', {}).get('resp', [])
+        return data
+    
+    def removedirs(self, name:str='None'):
+        data = {
+            'path':name
+        }
+        self.send('rmdir', data=data)
+        resp = self.node.recv(timeout=10)
+        data = self.node.recv(timeout=10).get('data', {}).get('resp', [])
+        return data
+    
+    def open(self, path, mode, encoding='utf-8') -> RemoteFileObject:
+        obj = RemoteFileObject(self, path, mode, encoding=encoding)
+        return obj

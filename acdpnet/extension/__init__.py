@@ -1,6 +1,3 @@
 import acdpnet.extension.transfer  as transfer
-
-try:
-    import acdpnet.extension.automatic as automatic
-    import pyautogui
-except:pass
+import acdpnet.extension.automatic as automatic
+import acdpnet.extension.network   as network

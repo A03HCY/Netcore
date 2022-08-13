@@ -548,6 +548,12 @@ class Command:
             pprint(GetExtension(), expand_all=True, console=console)
         if data[0] == '':
             print(TreeExtension(info).root, '')
+    
+    def wget(data):
+        extension.network.DownloadLocal(input('# '), console, buff=4096).start()
+    
+    def mv(data):
+        pass
 
 
 

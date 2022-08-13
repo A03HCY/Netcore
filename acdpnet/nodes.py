@@ -17,6 +17,7 @@ class BasicNode:
         'handl':['command', 'data']
     }
     status = False
+    remote = ''
     
     def __init__(self, uid:str, pwd:str):
         self.conet = Conet()
@@ -47,6 +48,7 @@ class BasicNode:
         except:
             print('Error')
         self.idenfy()
+        self.remote = 'server'
     
     def idenfy(self):
         self.conet.Idata.update({
@@ -77,11 +79,15 @@ class ExtensionSupportNode(BasicNode):
             if name == 'description':continue
             if name.startswith('_'):continue
             self.meth[name] = getattr(ext, name)
-            self.mdes[name] = getattr(ext, 'description').get(name, {})
+            if 'description' in dir(ext):
+                self.mdes[name] = getattr(ext, 'description').get(name, {})
+            else:
+                self.mdes[name] = {}
     
     def command(self, cmd:str='None'):
         def decorator(func):
             self.meth[cmd] = func
+            self.mdes[cmd] = {}
             return func
         return decorator
 

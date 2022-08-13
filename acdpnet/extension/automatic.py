@@ -1,6 +1,7 @@
+from acdpnet.tools import *
 from acdpnet.tools import Conet
 from io            import BytesIO
-import pyautogui as pg
+import pyautogui   as pg
 import ast
 
 class ScreenNodes:
@@ -23,3 +24,8 @@ class ScreenNodes:
             'data':data
         }
         conet.sendata(resp)
+
+
+class RemoteScreen(RemoteExtension):
+    def show(self):
+        pass

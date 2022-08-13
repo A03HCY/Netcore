@@ -261,8 +261,9 @@ def clearify(org, dic, defult=None):
 
 
 class List:
-    def __init__(self, path:str):
-        self.path = path
+    def __init__(self, path:str, raw=False):
+        self.path  = path
+        self.raw   = raw
         self.table = []
         self.Do()
     
@@ -278,15 +279,26 @@ class List:
                 files.append(i)
         for i in dirs:
             p = os.path.join(path, i)
-            self.table.append(list(
-                ("📁 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
-            ))
+            if self.raw:
+                self.table.append(list(
+                    (i, oct(os.stat(p).st_mode)[-3:], '-', 'D')
+                ))
+            else:
+                self.table.append(list(
+                    ("📁 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), '-')
+                ))
         for i in files:
             p = os.path.join(path, i)
-            size = self.convert_size(os.path.getsize(p))
-            self.table.append(list(
-                ("📄 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
-            ))
+            if self.raw:
+                size = os.path.getsize(p)
+                self.table.append(list(
+                    (i, oct(os.stat(p).st_mode)[-3:], size, 'F')
+                ))
+            else:
+                size = self.convert_size(os.path.getsize(p))
+                self.table.append(list(
+                    ("📄 "+i, oct(os.stat(p).st_mode)[-3:], self.time(p), size)
+                ))
     
     def convert_size(self, text):
         units = [" B", "KB", "MB", "GB", "TB", "PB"]
@@ -299,6 +311,42 @@ class List:
     def time(self, path):
         data = time.localtime(os.stat(path).st_mtime)
         return time.strftime("%Y-%m-%d %H:%M", data)
+
+class RemotePush:
+    def __init__(self, data):
+        self.size   = os.path.getsize(data['f_path'])
+        self.prot   = BasicProtocol()
+        self.header = self.prot.GetHead(length=self.size)
+        self.data   = data
+
+    def From(self, f):
+        self.f = f
+        return self
+
+    def Now(self, conet):
+        resp = {
+            'command':'flow_trans',
+            'data':self.data
+        }
+        conet.sendata(resp)
+        conet.que.put(RanCode(4))
+        conn = conet.conn
+        conn.send(self.header)
+        
+        length = self.size
+        sended = 0
+        buff   = 8192
+        while sended < length:
+            if length - sended > buff:
+                temp = self.f.read(buff)
+                sended += len(temp)
+            else:
+                temp = self.f.read(length - sended)
+                sended += len(temp)
+            conn.send(temp)
+        
+        conet.que.get()
+        conet.que.task_done()
 
 class RemoteGet:
     def __init__(self, conet:Conet):
@@ -376,3 +424,36 @@ class RemoteGet:
                 progress.update(task, advance=pros)
                 self.f.write(temp)
                 if temp == b'':break
+
+
+class RemoteExtension:
+    def __init__(self, node, mac:str):
+        self.node = node
+        self.now_path = ''
+        self.mac  = mac
+        self.info = {}
+        meth = self.node.server.get('meth', {})
+        if not 'activities' in list(meth.keys()):
+            raise RemoteConnection('<activities> is not been supported.')
+        if not 'multi_cmd' in list(meth.keys()):
+            raise RemoteConnection('<multi_cmd> is not been supported.')
+        
+        for i in self.online():
+            if i.get('mac') == self.mac:
+                self.info = i
+                break
+        if self.info == {}:
+            raise RemoteConnection('Target {} is not online.'.format(self.mac))
+        
+        self.node.remote = self.mac
+        self.getcwd()
+
+        self.setup()
+    
+    def setup(self):
+        pass
+
+    def send(self, cmd:str, data:dict={}):
+        data['remote']  = self.mac
+        data['command'] = cmd
+        self.node.send('multi_cmd', data)
