@@ -318,6 +318,20 @@ class FilesNodes:
         }
         conet.sendata(resp)
     
+    def mkfile(conet:Conet):
+        data = conet.get('data')
+        path = data.get('path', 'file.unknow')
+        try:
+            open(path, 'wb').close()
+            status = 'OK'
+        except:
+            status = 'Failed'
+        resp = {
+            'command':'multi_cmd',
+            'data':status
+        }
+        conet.sendata(resp)
+    
     def fileraw(conet:Conet):
         data = conet.get('data')
         path = data.get('path', '')
@@ -358,7 +372,13 @@ class FilesNodes:
             'data':data
         }
         conet.sendata(resp)
-
+    
+    def push(conet:Conet):
+        data = conet.get('data')
+        path = data.get('path', './file.unknow')
+        with open(path, 'wb') as f:
+            target = RemoteGet(conet).To(f)
+            target.Now()
     
     def get(conet:Conet):
         data = conet.get('data')
@@ -374,6 +394,7 @@ class FilesNodes:
                 'data':data
             }
             conet.sendata(resp)
+            conet.recvdata(timeout=5)
             return
         
         data['resp'] = 'OK'
@@ -382,10 +403,7 @@ class FilesNodes:
             'data':data
         }
         conet.sendata(resp)
-        
-        size   = os.path.getsize(path)
-        prot   = BasicProtocol()
-        header = prot.GetHead(length=size)
+        conet.recvdata(timeout=5)
 
         with open(path, 'rb') as f:
             tar = RemotePush(data).From(f)
@@ -473,7 +491,7 @@ class RemoteFileObject:
     def close(self):
         pass
 
-    def save(self, local):
+    def save(self, local, console=None):
         data = {
             'path':self.path
         }
@@ -485,10 +503,10 @@ class RemoteFileObject:
             return
         with open(local, 'wb') as f:
             target = RemoteGet(self.rfs.node.conet).To(f)
-            target.Now()
-        
-    def push(self, local, remote):
-        pass
+            if console:
+                target.Now_Progress(console)
+            else:
+                target.Now()
 
 
 class RemotePath:
@@ -521,6 +539,7 @@ class RemotePath:
         return self.istype(path, 'F')
 
     def isdir(self, path):
+        if path == '.':return True
         return self.istype(path, 'D')
     
     def getsize(self, path):
@@ -532,16 +551,39 @@ class RemotePath:
         data = self.rfs.node.recv(timeout=10).get('data', {}).get('resp')
         return data
     
-    def copy(self, fm, to):
+    def push(self, local, remote, console=None):
+        r_path, r_name = os.path.split(remote)
+        if not self.isdir(r_path):
+            return 'NO'
+        if not os.path.exists(local):
+            return 'L NO'
+
+        data = {
+            'path':  remote,
+            'remote':self.rfs.mac,
+            'f_path':local
+        }
+        self.rfs.send('push', data=data)
+        resp = self.rfs.node.recv(timeout=10)
+        with open(local, 'rb') as f:
+            target = RemotePush(data).From(f)
+            if console:
+                target.Now_Progress(self.rfs.node.conet, console)
+            else:
+                target.Now(self.rfs.node.conet)
+
+        return 'OK'
+        
+    
+    def copy(self, fm, to, console=None):
         if type(fm) == Local and type(to) == Local:
             return
         
         if type(fm) == Local:
-            # push
-            pass
+            return self.push(fm.path, to, console=console)
         elif type(to) == Local:
-            # get
-            pass
+            with self.rfs.open(fm, 'rb') as f:
+                f.save(to.path, console=console)
         else:
             # mv
             pass
@@ -550,11 +592,6 @@ class RemotePath:
 class RemoteFileSystem(RemoteExtension):
     def setup(self):
         self.path = RemotePath(self)
-    
-    def online(self):
-        self.node.send('activities')
-        data = self.node.recv()
-        return data
     
     def metadir(self, path):
         if path == '':path = './'
@@ -576,12 +613,14 @@ class RemoteFileSystem(RemoteExtension):
             ls.append(i[0])
         return ls
     
-    def getcwd(self):
-        self.send('pwd')
+    def mkfile(self, path):
+        data = {
+            'path':path
+        }
+        self.send('mkfile', data=data)
         resp = self.node.recv(timeout=10)
-        path = self.node.recv(timeout=10).get('data', {}).get('resp', '')
-        self.now_path = path
-        return path
+        data = self.node.recv(timeout=10).get('data', {}).get('resp', [])
+        return data
     
     def remove(self, path:str='None'):
         data = {
@@ -601,6 +640,9 @@ class RemoteFileSystem(RemoteExtension):
         data = self.node.recv(timeout=10).get('data', {}).get('resp', [])
         return data
     
+    removedir = removedirs
+
     def open(self, path, mode, encoding='utf-8') -> RemoteFileObject:
         obj = RemoteFileObject(self, path, mode, encoding=encoding)
         return obj
+

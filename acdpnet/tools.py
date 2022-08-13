@@ -339,14 +339,65 @@ class RemotePush:
         while sended < length:
             if length - sended > buff:
                 temp = self.f.read(buff)
-                sended += len(temp)
             else:
                 temp = self.f.read(length - sended)
-                sended += len(temp)
+            pros = len(temp)
+            sended += pros
             conn.send(temp)
-        
         conet.que.get()
         conet.que.task_done()
+    
+    def Now_Progress(self, conet, console):
+        from rich.console  import Console, Group
+        from rich.progress import Progress
+        from rich.progress import (
+            BarColumn,
+            DownloadColumn,
+            Progress,
+            SpinnerColumn,
+            TaskProgressColumn,
+            TimeElapsedColumn,
+            TimeRemainingColumn,
+            TransferSpeedColumn,
+        )
+
+        with Progress(
+            SpinnerColumn(),
+            "{task.description}",
+            BarColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            resp = {
+                'command':'flow_trans',
+                'data':self.data
+            }
+            conet.sendata(resp)
+            conet.que.put(RanCode(4))
+            conn = conet.conn
+            conn.send(self.header)
+            
+            length = self.size
+            task = progress.add_task("[green3]Push", total=length)
+            progress.update(task, advance=0)
+            sended = 0
+            buff   = 8192
+            while sended < length:
+                if length - sended > buff:
+                    temp = self.f.read(buff)
+                else:
+                    temp = self.f.read(length - sended)
+                pros = len(temp)
+                sended += pros
+                progress.update(task, advance=pros)
+                conn.send(temp)
+            
+            conet.que.get()
+            conet.que.task_done()
 
 class RemoteGet:
     def __init__(self, conet:Conet):
@@ -371,10 +422,10 @@ class RemoteGet:
         while recvdata < length:
             if length - recvdata > self.buff:
                 temp = self.conn.recv(self.buff)
-                recvdata += len(temp)
             else:
                 temp = self.conn.recv(length - recvdata)
-                recvdata += len(temp)
+            pros = len(temp)
+            recvdata += pros
             self.f.write(temp)
             if temp == b'':break
 
@@ -411,7 +462,7 @@ class RemoteGet:
                 if temp == b'':break
             
             length = ReadHead(header)[3]
-            task = progress.add_task("[green3]Trans", total=length)
+            task = progress.add_task("[green3]Get.", total=length)
             progress.update(task, advance=0)
             recvdata = 0
             while recvdata < length:
@@ -457,3 +508,15 @@ class RemoteExtension:
         data['remote']  = self.mac
         data['command'] = cmd
         self.node.send('multi_cmd', data)
+    
+    def online(self):
+        self.node.send('activities')
+        data = self.node.recv()
+        return data
+        
+    def getcwd(self):
+        self.send('pwd')
+        resp = self.node.recv(timeout=10)
+        path = self.node.recv(timeout=10).get('data', {}).get('resp', '')
+        self.now_path = path
+        return path
