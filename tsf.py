@@ -18,10 +18,10 @@ def setup(self):
 
 try:
     ip    = 'localhost'
-    token = 'A'
+    token = ''
     port  = 1035
     uid   = 'A'
-    pwd   = 'A'
+    pwd   = ''
 except:pass
 
 

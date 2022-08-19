@@ -3,4 +3,4 @@ import acdpnet.nodes     as nodes
 import acdpnet.services  as services
 import acdpnet.extension as extension
 
-__version__ = '2.2.1'
+__version__ = '2.2.5'

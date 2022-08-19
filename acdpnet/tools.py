@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+import acdpnet
 import socket
 import struct
 import queue
@@ -10,7 +11,7 @@ import secrets
 import os
 import time
 
-VERS = '2.2.1'
+VERS = '2.2.5'
 __version__ = VERS
 
 

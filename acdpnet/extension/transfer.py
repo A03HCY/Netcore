@@ -483,8 +483,10 @@ class RemoteFileObject:
         self.rfs.send('fileraw', data=data)
         resp = self.rfs.node.recv(timeout=10)
         data = self.rfs.node.recv(timeout=10).get('data', {}).get('resp', 'ReadError')
-        if data == 'Connot be found' or data == 'ReadError' or data!= 'OK':
-            return 'Error'
+        if data == 'Connot be found':
+            raise RemoteSystem('File cannot be found.')
+        if data == 'ReadError' or data!= 'OK':
+            raise RemoteSystem('File Limited.')
         
         return data
     
@@ -498,9 +500,8 @@ class RemoteFileObject:
         self.rfs.send('get', data=data)
         resp = self.rfs.node.recv(timeout=10)
         data = self.rfs.node.recv(timeout=10).get('data', {})
-        print(data)
         if data.get('resp') != 'OK':
-            return
+            raise RemoteSystem('File cannot be found.')
         with open(local, 'wb') as f:
             target = RemoteGet(self.rfs.node.conet).To(f)
             if console:
