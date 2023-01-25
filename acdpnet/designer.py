@@ -28,3 +28,8 @@ class Tree:
     def close() -> None:
         pass
 
+    def handle() -> None:
+        pass
+
+    
+
