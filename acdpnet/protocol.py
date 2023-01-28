@@ -25,17 +25,21 @@ class Protocol:
         return 'Type:{} Length:{:.0f}'.format(self.extn, self.leng)
     
     def update(self):
+        # update the head_data
         self.leng = len(self.meta)
 
     def head(self) -> bytes:
+        # return the head data
         self.update()
         head_meta = self.make_head(self.extn, self.leng, self.enco)
         return head_meta
     
     def pack(self) -> bytes:
+        # return the full data
         return self.head() + bytes(self.meta)
     
     def unpack(self, data:bytes) -> bool:
+        # give a full data then reset self by the result
         self.extn, self.leng, seek = self.parse_static_head(data)
         self.extn = self.extn.decode(self.enco)
         meta = data[seek:]
