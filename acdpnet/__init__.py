@@ -1,5 +1,5 @@
-from acdpnet import protocol
-from acdpnet import transfer
-from acdpnet import designer
+from acdpnet import protocol # base
+from acdpnet import transfer # data transfer
+from acdpnet import networks # applications
 
 __version__ = '2.3.2-coding'

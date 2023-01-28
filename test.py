@@ -1,4 +1,4 @@
-from acdpnet.endpoint import *
+from acdpnet.networks.endpoint import *
 
 a = Endpoint()
 
@@ -6,4 +6,6 @@ a = Endpoint()
 def aaa():
     print('df')
 
-Autils.chains('.extn.sfgsfg.t93g')
+print(Autils.chains('.extn.sfgsfg.t93g'))
+
+import acdpnet.networks.designer as dsn

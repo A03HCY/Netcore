@@ -1,6 +1,14 @@
 from acdpnet.protocol import *
 
 
+class Reqst:
+    def __init__(self):
+        pass
+
+
+request = Reqst()
+
+
 class Autils:
     @staticmethod
     def chains(extn):
