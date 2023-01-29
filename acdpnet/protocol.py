@@ -3,20 +3,39 @@ from string  import ascii_letters, digits
 from ast     import literal_eval
 import struct
 
+from acdpnet import datasets
+
 
 def safecode(length:int=4):
     res = ''.join(choice(ascii_letters + digits) for x in range(length))
     return res
 
 
+def setio(read, write):
+    datasets.set('readio', read)
+    datasets.set('writeio', write)
+
+
+def gobwrite(fromfunc=None):
+    if fromfunc: return fromfunc
+    if datasets.get('writeio'): return datasets.get('writeio')
+    raise ValueError()
+
+
+def gobread(fromfunc=None):
+    if fromfunc: return fromfunc
+    if datasets.get('readio'): return datasets.get('readio')
+    raise ValueError()
+
+
 class Protocol:
     def __init__(self, meta:bytes=b'', extension:str='.unknow', encoding:str='utf-8') -> None:
-        self.buff = 2048
-        self.meta = bytearray(meta)
-        self.extn = extension
-        self.enco = encoding
-        self.leng = 0
-        self.now = 0
+        self.buff = 2048            # Buffer
+        self.meta = bytearray(meta) # Data content
+        self.extn = extension       # Label
+        self.enco = encoding        # Coding method
+        self.leng = 0               # Length of data content, auto-update with function updata()
+        self.now  = 0               # Coding method
         if meta:self.leng = len(meta)
         self.update()
     

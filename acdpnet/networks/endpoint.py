@@ -1,12 +1,13 @@
 from acdpnet.protocol import *
 
 
+# Multi-threading is not supported because of single channel!
+# Will use queuing to solve concurrency in the future version
+
+
 class Reqst:
     def __init__(self):
         pass
-
-
-request = Reqst()
 
 
 class Autils:
@@ -44,10 +45,16 @@ class Endpoint:
             return func
         return regsfunc
     
-    def setio(self, read, write):
-        self.rd = read
-        self.wt = write
+    def setio(self, read=None, write=None):
+        self.rd = gobread(read)
+        self.wt = gobwrite(write)
         self.ok = True
     
     def run(self):
         pass
+
+
+class Terminal:
+    def __init__(self):
+        pass
+

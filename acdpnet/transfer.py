@@ -1,9 +1,9 @@
 from acdpnet.protocol import *
 
 class DSTransfer:
-    def __init__(self, write, read, extension:str='', encoding:str='utf-8') -> None:
-        self.wt = write
-        self.rd = read
+    def __init__(self, read=None, write=None, extension:str='', encoding:str='utf-8') -> None:
+        self.wt = gobwrite(write)
+        self.rd = gobread(read)
         self.enco = encoding
         self.extn = extension
     
@@ -36,9 +36,9 @@ class DSTransfer:
 
 # Beta
 class IOTransfer:
-    def __init__(self, write, read, exit_with_error:bool=False) -> None:
-        self.wt = write
-        self.rd = read
+    def __init__(self, read=None, write=None, exit_with_error:bool=False) -> None:
+        self.wt = gobwrite(write)
+        self.rd = gobread(read)
         self.xt = exit_with_error
         self.ds = DSTransfer(self.wt, self.rd, extension='.io_transfer')
     

@@ -9,3 +9,9 @@ def aaa():
 print(Autils.chains('.extn.sfgsfg.t93g'))
 
 import acdpnet.networks.designer as dsn
+import acdpnet.datasets as ds
+import acdpnet.protocol as pt
+
+pt.setio('24', '34')
+
+print(pt.gobread())
