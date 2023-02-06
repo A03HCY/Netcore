@@ -1,24 +1,20 @@
 import socket
-from acdpnet import transfer
+from acdpnet import protocol as pt
 import os
 
 sk = socket.socket()
-sk.bind(('127.0.0.1', 8898))
+sk.bind(('127.0.0.1', int(input('# '))))
 sk.listen()
-
-class T:
-    tt = ['hi']
-
-    def a(self, ss):
-        print(ss)
-    
-    def b(self, s):return s
-
-print('waiting')
 conn, addr = sk.accept()
-d = transfer.IOTransfer(conn.send, conn.recv)
-print('ok')
-d.local(os)
+
+
+pt.setio(conn.recv, conn.send)
+ds = pt.Acdpnet()
+
+ds.multi_recv()
+
+print(ds.list_rcv, ds.temp_rcv)
+
 
 conn.close()
 sk.close()

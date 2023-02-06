@@ -61,7 +61,6 @@ class Protocol:
     def unpack(self, data:bytes) -> bool:
         # give a full data then reset self by the result
         self.extn, self.leng, seek = self.parse_static_head(data)
-        self.extn = self.extn.decode(self.enco)
         meta = data[seek:]
         if len(meta) == self.leng:
             self.meta = meta
@@ -87,8 +86,10 @@ class Protocol:
     
     def readbit(self, buff:int) -> tuple:
         # meta, bool of if is all has been read
-        try: return self.read(length=buff), False
-        except: return self.read(), True
+        try:
+            return self.read(length=buff), False
+        except:
+            return self.read(), True
     
     def seek(self, location:int) -> None:
         if location > self.leng:raise LookupError('Out of writable range')
@@ -182,6 +183,15 @@ class Protocol:
         return ptcl
 
 
+class Autils:
+    @staticmethod
+    def chains(extn):
+        data = extn[1:].split('.')
+        head = data[0]
+        extn = '.' + '.'.join(data[1:])
+        return head, extn
+
+
 class Acdpnet:
     def __init__(self):
         self.ok = False
@@ -189,6 +199,7 @@ class Acdpnet:
         self.temp_rcv = {}
         self.head_que = queue.Queue()
         self.list_snd = []
+        self.pool = {}
         try:
             self.setio()
         except:pass
@@ -201,14 +212,20 @@ class Acdpnet:
     def push(self, data:Protocol):
         # add a data to the que
         safe = safecode(4)
-        self.__dict__[safe] = data
+        self.pool[safe] = data
         head = self.info(data)
         head.extn += '.' + safe
         self.head_que.put(head)
+    
+    def push_s(self, data: Protocol):
+        self.list_snd.append(data)
 
     def recv(self):
-        extn, leng, meta = Protocol.parse_stream_head(self.rd)
-        head, extn = Autils.chains(extn)
+        data = Protocol()
+        data.load_stream(self.rd)
+        leng = data.leng
+        meta = data.meta
+        head, extn = Autils.chains(data.extn)
         
         if head == 'multi_head':
             safe, extn = Autils.chains(extn)
@@ -221,8 +238,11 @@ class Acdpnet:
         if head == 'multi_obj':
             safe, extn = Autils.chains(extn)
             self.temp_rcv[safe]['meta'] += meta
-            self.temp_rcv[safe]['leng'] += len(meta)
-            if leng == self.temp_rcv[safe]['leng']:
+            self.temp_rcv[safe]['leng'] += data.leng
+
+            # leng info of head, in order to compa
+            _, tlen, _ = Protocol.parse_static_head(self.temp_rcv[safe]['head'])
+            if tlen == self.temp_rcv[safe]['leng']:
                 data = Protocol()
                 data.unpack(
                     self.temp_rcv[safe]['head'] + self.temp_rcv[safe]['meta']
@@ -230,23 +250,28 @@ class Acdpnet:
                 self.list_rcv.append(data)
                 del self.temp_rcv[safe]
             return
-        # extn.args
+        
+        self.list_rcv.append(data)
 
     def multi_send(self):
         while not self.head_que.empty():
             head = self.head_que.get()
             head.create_stream(self.wt)
-        for i in self.__dict__:
-            data = self.__dict__[i]
+        for i in self.pool:
+            data = self.pool[i]
             meta, end = data.readbit(2048)
             meta = Protocol(meta=meta, extension='.multi_obj.{}'.format(i))
             meta.create_stream(self.wt)
             if not end: continue
-            del self.__dict__[i]
+            del self.pool[i]
     
     def singl_send(self):
         for i in self.list_snd: i.create_stream(self.wt)
         self.list_snd = []
+    
+    def multi_recv(self):
+        self.recv()
+        while self.temp_rcv: self.recv()
 
     @staticmethod
     def info(data:Protocol):

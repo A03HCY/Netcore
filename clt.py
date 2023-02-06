@@ -1,15 +1,20 @@
 import socket
-from acdpnet import transfer
+
+from acdpnet import protocol as pt
 
 sk = socket.socket()           
 
-sk.connect(('127.0.0.1',8898))
+sk.connect(('127.0.0.1', int(input('# '))))
+
+pt.setio(sk.recv, sk.send)
 
 
-d = transfer.IOTransfer(sk.send, sk.recv)
-print('ok')
+ds = pt.Acdpnet()
 
-with d.open() as os:
-    print(os.listdir('./'))
+ds.push(pt.Protocol(meta=b'sg'))
+ds.push(pt.Protocol(meta=b'wewe'))
+ds.multi_send()
+
+print('done')
 
 sk.close()

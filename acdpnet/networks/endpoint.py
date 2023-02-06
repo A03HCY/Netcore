@@ -10,14 +10,6 @@ class Reqst:
         pass
 
 
-class Autils:
-    @staticmethod
-    def chains(extn):
-        data = extn[1:].split('.')
-        head = data[0]
-        extn = '.' + '.'.join(data[1:])
-        return head, extn
-
 
 class Endpoint:
     def __init__(self):
