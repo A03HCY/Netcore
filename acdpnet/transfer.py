@@ -34,6 +34,11 @@ class DSTransfer:
         except:return None
 
 
+class Crave:
+    def __init__(self):
+        pass
+
+
 # Beta
 class IOTransfer:
     def __init__(self, read=None, write=None, exit_with_error:bool=False) -> None:

@@ -2,6 +2,7 @@ from secrets import choice
 from string  import ascii_letters, digits
 from ast     import literal_eval
 import struct
+import queue
 
 from acdpnet import datasets
 
@@ -83,6 +84,11 @@ class Protocol:
             self.now += length
             return bytes(data)
         except:raise LookupError('Out of readable range')
+    
+    def readbit(self, buff:int) -> tuple:
+        # meta, bool of if is all has been read
+        try: return self.read(length=buff), False
+        except: return self.read(), True
     
     def seek(self, location:int) -> None:
         if location > self.leng:raise LookupError('Out of writable range')
@@ -174,3 +180,80 @@ class Protocol:
         ptcl = Protocol()
         ptcl.load_stream(func=func, from_head=head)
         return ptcl
+
+
+class Acdpnet:
+    def __init__(self):
+        self.ok = False
+        self.list_rcv = []
+        self.temp_rcv = {}
+        self.head_que = queue.Queue()
+        self.list_snd = []
+        try:
+            self.setio()
+        except:pass
+
+    def setio(self, read=None, write=None):
+        self.rd = gobread(read)
+        self.wt = gobwrite(write)
+        self.ok = True
+
+    def push(self, data:Protocol):
+        # add a data to the que
+        safe = safecode(4)
+        self.__dict__[safe] = data
+        head = self.info(data)
+        head.extn += '.' + safe
+        self.head_que.put(head)
+
+    def recv(self):
+        extn, leng, meta = Protocol.parse_stream_head(self.rd)
+        head, extn = Autils.chains(extn)
+        
+        if head == 'multi_head':
+            safe, extn = Autils.chains(extn)
+            self.temp_rcv[safe] = {
+                'head': meta,
+                'meta': bytes(),
+                'leng': 0
+            }
+            return
+        if head == 'multi_obj':
+            safe, extn = Autils.chains(extn)
+            self.temp_rcv[safe]['meta'] += meta
+            self.temp_rcv[safe]['leng'] += len(meta)
+            if leng == self.temp_rcv[safe]['leng']:
+                data = Protocol()
+                data.unpack(
+                    self.temp_rcv[safe]['head'] + self.temp_rcv[safe]['meta']
+                )
+                self.list_rcv.append(data)
+                del self.temp_rcv[safe]
+            return
+        # extn.args
+
+    def multi_send(self):
+        while not self.head_que.empty():
+            head = self.head_que.get()
+            head.create_stream(self.wt)
+        for i in self.__dict__:
+            data = self.__dict__[i]
+            meta, end = data.readbit(2048)
+            meta = Protocol(meta=meta, extension='.multi_obj.{}'.format(i))
+            meta.create_stream(self.wt)
+            if not end: continue
+            del self.__dict__[i]
+    
+    def singl_send(self):
+        for i in self.list_snd: i.create_stream(self.wt)
+        self.list_snd = []
+
+    @staticmethod
+    def info(data:Protocol):
+        info = Protocol(data.head(), extension='.multi_head')
+        return info
+
+'''
+.multi-{}.{safecode}.extn.args
+.extn.args
+'''
