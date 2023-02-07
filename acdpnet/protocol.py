@@ -3,6 +3,7 @@ from string  import ascii_letters, digits
 from ast     import literal_eval
 import struct
 import queue
+import threading as td
 
 from acdpnet import datasets
 
@@ -142,7 +143,7 @@ class Protocol:
             elif not ignore:
                 data += temp
             seek += len(temp)
-            if seek == length:break
+            if seek >= length:break # DP: '>='
         return bytes(data)
     
     @staticmethod
@@ -191,15 +192,20 @@ class Autils:
         extn = '.' + '.'.join(data[1:])
         return head, extn
 
+# Todo Apis:
+#   List processing datas in recving or sending
+#   then we need a Manager
 
 class Acdpnet:
     def __init__(self):
         self.ok = False
-        self.list_rcv = []
+        self.tred = False
         self.temp_rcv = {}
+        self.recv_que = queue.Queue()
         self.head_que = queue.Queue()
         self.list_snd = []
         self.pool = {}
+        self.func = None
         try:
             self.setio()
         except:pass
@@ -208,8 +214,9 @@ class Acdpnet:
         self.rd = gobread(read)
         self.wt = gobwrite(write)
         self.ok = True
+        return self
 
-    def push(self, data:Protocol):
+    def multi_push(self, data:Protocol):
         # add a data to the que
         safe = safecode(4)
         self.pool[safe] = data
@@ -217,10 +224,26 @@ class Acdpnet:
         head.extn += '.' + safe
         self.head_que.put(head)
     
-    def push_s(self, data: Protocol):
+    def singl_push(self, data: Protocol):
         self.list_snd.append(data)
 
-    def recv(self):
+    def multi_send(self):
+        while not self.head_que.empty():
+            head = self.head_que.get()
+            head.create_stream(self.wt)
+        for i in self.pool:
+            data = self.pool[i]
+            meta, end = data.readbit(2048)
+            meta = Protocol(meta=meta, extension='.multi_obj.{}'.format(i))
+            meta.create_stream(self.wt)
+            if not end: continue
+            del self.pool[i]
+    
+    def singl_send(self):
+        for i in self.list_snd: i.create_stream(self.wt)
+        self.list_snd = []
+
+    def singl_recv(self):
         data = Protocol()
         data.load_stream(self.rd)
         leng = data.leng
@@ -247,36 +270,47 @@ class Acdpnet:
                 data.unpack(
                     self.temp_rcv[safe]['head'] + self.temp_rcv[safe]['meta']
                 )
-                self.list_rcv.append(data)
+                self.arrivin(data)
                 del self.temp_rcv[safe]
             return
         
-        self.list_rcv.append(data)
-
-    def multi_send(self):
-        while not self.head_que.empty():
-            head = self.head_que.get()
-            head.create_stream(self.wt)
-        for i in self.pool:
-            data = self.pool[i]
-            meta, end = data.readbit(2048)
-            meta = Protocol(meta=meta, extension='.multi_obj.{}'.format(i))
-            meta.create_stream(self.wt)
-            if not end: continue
-            del self.pool[i]
-    
-    def singl_send(self):
-        for i in self.list_snd: i.create_stream(self.wt)
-        self.list_snd = []
+        self.arrivin(data)
     
     def multi_recv(self):
-        self.recv()
-        while self.temp_rcv: self.recv()
+        self.singl_recv()
+        while self.temp_rcv: self.singl_recv()
+    
+    def arrivin(self, data):
+        if not self.func:
+            self.recv_que.put(data)
+            return
+        unsave = self.func(data)
+        if unsave in [None, False]: self.recv_que.put(data)
+    
+    # Threading
+    def recv_start(self, wait:bool=False):
+        if self.tred: return
+        self.tred = True
+        thread = td.Thread(target=self.recv_thread_func)
+        thread.start()
+        if wait: thread.join()
 
+    def recv_thread_func(self):
+        try:
+            while True: self.singl_recv()
+        except:
+            print('Connection closed')
+    
     @staticmethod
     def info(data:Protocol):
         info = Protocol(data.head(), extension='.multi_head')
         return info
+
+
+class Netgroup:
+    def __init__(self):
+        pass
+
 
 '''
 .multi-{}.{safecode}.extn.args

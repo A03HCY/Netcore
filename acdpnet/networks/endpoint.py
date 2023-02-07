@@ -1,8 +1,5 @@
 from acdpnet.protocol import *
-
-
-# Multi-threading is not supported because of single channel!
-# Will use queuing to solve concurrency in the future version
+import threading as td
 
 
 class Reqst:
@@ -10,9 +7,10 @@ class Reqst:
         pass
 
 
-
 class Endpoint:
     def __init__(self):
+        self.ok = False
+        self.func = {}
         self.__gene__()
 
     def __gene__(self):
@@ -21,14 +19,11 @@ class Endpoint:
             self.__regs__('.' + n[3:], getattr(self, n))
 
     def __regs__(self, extn, func, **options):
-        self.__dict__[extn] = [func, options]
+        self.func[extn] = [func, options]
         print('regs:', extn)
 
     def __hadl__(self):
-        extn, leng, meta = Protocol.parse_stream_head(self.rd)
-        head, extn = Autils.chains(extn)
-        if not head in self.__dict__: Protocol.ignore_stream(self.rd, from_head=meta)
-        print('recv:', head)
+        pass
 
     def route(self, extn, **options):
         if not extn[0] == '.': extn = '.' + extn
@@ -37,13 +32,12 @@ class Endpoint:
             return func
         return regsfunc
     
-    def setio(self, read=None, write=None):
-        self.rd = gobread(read)
-        self.wt = gobwrite(write)
+    def setnet(self, net:Acdpnet):
+        self.net = net
         self.ok = True
     
     def run(self):
-        pass
+        if not self.ok: raise EnvironmentError('Network was not set')
 
 
 class Terminal:

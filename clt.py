@@ -11,10 +11,10 @@ pt.setio(sk.recv, sk.send)
 
 ds = pt.Acdpnet()
 
-ds.push(pt.Protocol(meta=b'sg'))
-ds.push(pt.Protocol(meta=b'wewe'))
-ds.multi_send()
-
-print('done')
+while True:
+    msg = input('> ')
+    if msg == 'exit': break
+    ds.singl_push(pt.Protocol(meta=msg.encode('utf-8')))
+    ds.singl_send()
 
 sk.close()
