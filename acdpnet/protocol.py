@@ -184,6 +184,12 @@ class Protocol:
         return ptcl
 
 
+def send(data:Protocol):
+    if not datasets.get('writeio'): return
+    wtio = datasets.get('writeio')
+    data.create_stream(wtio)
+
+
 class Autils:
     @staticmethod
     def chains(extn):
@@ -205,7 +211,8 @@ class Acdpnet:
         self.head_que = queue.Queue()
         self.list_snd = []
         self.pool = {}
-        self.func = None
+        self.recv_func = None
+        self.send_func = None
         try:
             self.setio()
         except:pass
@@ -230,17 +237,17 @@ class Acdpnet:
     def multi_send(self):
         while not self.head_que.empty():
             head = self.head_que.get()
-            head.create_stream(self.wt)
+            head.create_stream(self.leavin)
         for i in self.pool:
             data = self.pool[i]
             meta, end = data.readbit(2048)
             meta = Protocol(meta=meta, extension='.multi_obj.{}'.format(i))
-            meta.create_stream(self.wt)
+            meta.create_stream(self.leavin)
             if not end: continue
             del self.pool[i]
     
     def singl_send(self):
-        for i in self.list_snd: i.create_stream(self.wt)
+        for i in self.list_snd: i.create_stream(self.leavin)
         self.list_snd = []
 
     def singl_recv(self):
@@ -281,25 +288,34 @@ class Acdpnet:
         while self.temp_rcv: self.singl_recv()
     
     def arrivin(self, data):
-        if not self.func:
+        if not self.recv_func:
             self.recv_que.put(data)
             return
-        unsave = self.func(data)
+        unsave = self.recv_func(data)
         if unsave in [None, False]: self.recv_que.put(data)
+    
+    def leavin(self, meta):
+        if self.send_func: self.send_func(meta)
+        self.wt(meta)
     
     # Threading
     def recv_start(self, wait:bool=False):
         if self.tred: return
         self.tred = True
-        thread = td.Thread(target=self.recv_thread_func)
-        thread.start()
-        if wait: thread.join()
+        self.thread = td.Thread(target=self.recv_thread_func)
+        self.thread.start()
+        if wait: self.thread.join()
+    
+    def recv_join(self):
+        if not self.tred: return
+        if self.thread: self.thread.join()
 
     def recv_thread_func(self):
         try:
             while True: self.singl_recv()
         except:
             print('Connection closed')
+            self.tred = False
     
     @staticmethod
     def info(data:Protocol):
@@ -309,6 +325,22 @@ class Acdpnet:
 
 class Netgroup:
     def __init__(self):
+        self.pool = {}
+    
+    def add(self, net:Acdpnet, name:str):
+        self.pool[name] = net
+    
+    def net(self, name:str) -> Acdpnet:
+        return self.pool.get(name)
+    
+    def new(self, name:str, read, write) -> Acdpnet:
+        self.pool[name] = Acdpnet().setio(read=read, write=write)
+        return self.pool[name]
+    
+    def remove(self, name:str):
+        pass
+
+    def destroy(self, name:str):
         pass
 
 

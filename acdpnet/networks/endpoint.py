@@ -22,8 +22,13 @@ class Endpoint:
         self.func[extn] = [func, options]
         print('regs:', extn)
 
-    def __hadl__(self):
-        pass
+    def __hadl__(self, data:Protocol):
+        head, extn = Autils.chains(data.extn)
+        head = '.' + head
+        if head in self.func:
+            thread = td.Thread(target=self.func[head][0], args=(data,))
+            thread.start()
+        return True
 
     def route(self, extn, **options):
         if not extn[0] == '.': extn = '.' + extn
@@ -38,6 +43,8 @@ class Endpoint:
     
     def run(self):
         if not self.ok: raise EnvironmentError('Network was not set')
+        self.net.recv_func = self.__hadl__
+        self.net.recv_start(wait=True)
 
 
 class Terminal:
