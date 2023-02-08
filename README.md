@@ -2,6 +2,8 @@
 
 一个能够用简洁的方式来构建通信服务的轻量级框架。
 
+**I M P O R T A N T  此框架即将弃用**
+
 ## 方法
 
 此项目已上传 [acdpnet · PyPI](https://pypi.org/project/acdpnet/) ，快速安装可使用以下命令。
