@@ -5,7 +5,7 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setuptools.setup(
     name="acdpnet",
-    version="3.0.0",
+    version="2.3.2",
     author="Aiden Hopkins",
     author_email="acdphc@qq.com",
     description="A Network Protocol Frame",

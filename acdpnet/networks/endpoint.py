@@ -1,4 +1,5 @@
 from acdpnet.protocol import *
+
 import threading as td
 
 
@@ -20,7 +21,6 @@ class Endpoint:
 
     def __regs__(self, extn, func, **options):
         self.func[extn] = [func, options]
-        print('regs:', extn)
 
     def __hadl__(self, data:Protocol):
         head, extn = Autils.chains(data.extn)

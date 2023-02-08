@@ -1,11 +1,12 @@
+from acdpnet import datasets
 from secrets import choice
 from string  import ascii_letters, digits
 from ast     import literal_eval
+
 import struct
 import queue
 import threading as td
 
-from acdpnet import datasets
 
 
 def safecode(length:int=4):
