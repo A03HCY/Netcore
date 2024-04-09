@@ -38,7 +38,7 @@ class Protocol:
         self.extn = extension       # Label
         self.enco = encoding        # Coding method
         self.leng = 0               # Length of data content, auto-update with function updata()
-        self.now  = 0               # Coding method
+        self.now  = 0               # Location of seeking
         if meta:self.leng = len(meta)
         self.update()
     

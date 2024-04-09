@@ -1,34 +1,20 @@
 import socket
-from acdpnet import protocol as pt
-from acdpnet.networks import endpoint as ep
-import os
+from core import endpoint as ep
+
 
 sk = socket.socket()
 sk.bind(('127.0.0.1', int(input('# '))))
 sk.listen()
 conn, addr = sk.accept()
 
-pt.setio(conn.recv, conn.send)
 
-app = ep.Endpoint()
-app.setnet(pt.Acdpnet())
+end = ep.Endpoint(conn.send, conn.recv)
 
-@app.route('unknow')
-def uk(data):
-    print(data.meta.decode('utf-8'))
+@end.route('.say')
+def say(data:ep.Request):
+    print(data.meta)
 
-app.run()
-
-'''
-ds = pt.Acdpnet()
-
-def a(data:pt.Protocol):
-    print(str(data.meta.decode('utf-8')))
-    return True
-
-ds.recv_func = a
-ds.recv_start(wait=True)
-'''
+end.start()
 
 conn.close()
 sk.close()
