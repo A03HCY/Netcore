@@ -13,6 +13,7 @@ end = ep.Endpoint(conn.send, conn.recv)
 @end.route('.say')
 def say(data:ep.Request):
     print(data.meta)
+    data.response('.res', 'recved')
 
 end.start()
 

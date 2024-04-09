@@ -1,5 +1,5 @@
-from secrets import choice
-from string  import ascii_letters, digits
+from   secrets import choice
+from   string  import ascii_letters, digits
 import struct
 import ast, json
 import queue, threading
@@ -222,6 +222,25 @@ class Protocol:
         ptcl = Protocol()
         ptcl.load_stream(func=func, from_head=head)
         return ptcl
+    
+
+class Bridge:
+    def __init__(self, sender, recver, buff:int=2048):
+        self.buff   = buff
+        self.sender = sender
+        self.recver = recver
+    
+    def protocol_full(self):
+        Protocol.convet_full_stream_io(self.recver, self.sender)
+    
+    def protocol_meta(self):
+        meta_head = Protocol.parse_stream_head(self.recver)
+        Protocol.stream_until(self.recver, meta_head[1], writefunc=self.sender)
+
+    def data(self):
+        while True:
+            data = self.recver()
+            self.sender(data)
 
 
 class Pakage:

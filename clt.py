@@ -1,14 +1,19 @@
 import socket
 
-from core import protocol as pt
+from core import endpoint as pt
 
 sk = socket.socket()           
 
 sk.connect(('127.0.0.1', int(input('# '))))
 
 
-pk = pt.Pakage(sk.send, sk.recv, buff=4)
-pk.start()
+pk = pt.Endpoint(sk.send, sk.recv, buff=2048)
+
+@pk.route('.res')
+def res(data:pt.Request):
+    print(data.meta)
+
+pk.start(thread=True)
 
 while True:
     msg = input('> ')

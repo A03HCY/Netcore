@@ -1,4 +1,4 @@
-from core.protocol import Protocol, Pakage
+from  .protocol import Protocol, Pakage
 import threading
 
 
@@ -20,9 +20,9 @@ class Request:
     def meta(self):
         return self.__data.meta
     
-    def response(self, data) -> bool:
+    def response(self, extn, data) -> bool:
         if self.__is_ues: return False
-        self.__pakage.send(data)
+        self.__pakage.send(Protocol(extension=extn).upmeta(data))
         self.__is_ues = True
         return True
 
@@ -31,6 +31,7 @@ class Endpoint:
     def __init__(self, sender, recver, buff:int=2048):
         self.__routes = {}
         self.__pakage = Pakage(sender=sender, recver=recver, buff=buff)
+        self.send = self.__pakage.send
 
     def start(self, thread=False):
         if self.__pakage.is_run: return
