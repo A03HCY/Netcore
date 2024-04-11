@@ -1,6 +1,21 @@
 # Netcore
 
-一个用于简化数据传输流程的库。传输中，它能解决流传输粘包、数据丢失等问题，支持原格式传输；功能开发上，它使用类Flask框架拓展业务，无需写繁琐的条件判断，对项目有良好的可维护性。
+一个用于简化数据传输流程的库。它能解决流传输粘包、数据丢失等问题，支持原格式传输。
+
+Netcore 可使用类 Flask 框架拓展业务，无需写繁琐的条件判断，对项目有良好的可维护性。
+
+```python
+from netcore.endpoint import Endpoint, Request
+
+app = Endpoint(...)
+
+@app.route('.path')
+def func(req:Request):
+    data = req.data
+    req.response('.another_path', 'msg')
+
+app.start()
+```
 
 [TOC]
 
@@ -92,7 +107,7 @@ def __init__(self, meta:bytes=b'', extension:str='', encoding:str='utf-8', buff:
 def upmeta(self, data):...
 ```
 
-用于更新meta，此处data类型若为内置类型，则接收方收到的数据为该类型。
+用于更新meta，此处data类型若为内置类型，则接收方收到的数据为原来的类型。
 
 ```python
 @property
