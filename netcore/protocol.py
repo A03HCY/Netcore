@@ -76,7 +76,7 @@ class Protocol:
         return head_meta
 
     @property
-    def code(self) -> bytes:
+    def code(self) -> str:
         return self.meta.decode(self.enco)
     
     @property
@@ -92,6 +92,7 @@ class Protocol:
             return data
         except: pass
     
+    @property
     def pack(self) -> bytes:
         # return the full data
         return self.head + bytes(self.meta)
@@ -137,10 +138,10 @@ class Protocol:
     
     def load_stream(self, func, from_head:tuple=None):
         if not from_head:
-            self.extn, self.leng, _ = self.parse_stream_head(func)
+            self.extn, self.leng, _ = Protocol.parse_stream_head(func)
         else:
             self.extn, self.leng, _ = from_head
-        self.meta = self.stream_until(func, self.leng)
+        self.meta = Protocol.stream_until(func, self.leng)
         self.update()
         return self
     
@@ -243,7 +244,7 @@ class Bridge:
             self.sender(data)
 
 
-class Pakage:
+class Package:
     def __init__(self, sender, recver, buff:int=2048):
         self.buff   = buff
         self.sender = sender
@@ -287,7 +288,10 @@ class Pakage:
             meta.upmeta(data.meta)
         else:
             meta = Protocol(extension=f'.meta_{code}_0')
-            meta.upmeta(bytes(data))
+            if type(data) == str:
+                meta.upmeta(data.encode())
+            else:
+                meta.upmeta(bytes(data))
             head = Protocol(extension=f'.head_{code}')
             head.upmeta({
                 'type': str(type(data)),
@@ -364,8 +368,16 @@ class Pakage:
                     self.__recv_queue.put(Protocol(extension=data['head']).upmeta(value))
                     temp_pop.append(safe)
                     print('recved one')
+                elif data['type'] == str:
+                    try:
+                        result = value.decode()
+                    except:
+                        result = value
+                    self.__recv_queue.put(result)
+                    temp_pop.append(safe)
+                    print('recved one')
                 else:
-                    command = f"{data['transfer']}({value})"
+                    command = f"{data['type']}({value})"
                     try:
                         result = ast.literal_eval(command)
                     except:

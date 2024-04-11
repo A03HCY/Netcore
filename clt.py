@@ -1,6 +1,6 @@
 import socket
 
-from core import endpoint as pt
+from netcore import endpoint as pt
 
 sk = socket.socket()           
 

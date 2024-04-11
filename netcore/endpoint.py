@@ -1,9 +1,9 @@
-from  .protocol import Protocol, Pakage
+from  .protocol import Protocol, Package
 import threading
 
 
 class Request:
-    def __init__(self, pak:Pakage, data:Protocol) -> None:
+    def __init__(self, pak:Package, data:Protocol) -> None:
         self.__pakage = pak
         self.__is_ues = False
         self.__data   = data
@@ -30,7 +30,7 @@ class Request:
 class Endpoint:
     def __init__(self, sender, recver, buff:int=2048):
         self.__routes = {}
-        self.__pakage = Pakage(sender=sender, recver=recver, buff=buff)
+        self.__pakage = Package(sender=sender, recver=recver, buff=buff)
         self.send = self.__pakage.send
 
     def start(self, thread=False):
