@@ -25,7 +25,55 @@ python setup.py install
 
 ### Protocol
 
-#### 分解
+#### 快速使用
+
+通过 Protocol 收发数据。
+
+```python
+from netcore import protocol as pt
+from rich    import print
+import io
+
+pool = io.BytesIO()
+
+# ==========
+data = pt.Protocol(extension='.example')
+data.upmeta({
+    'msg': [1, 2, 3]
+})
+data.create_stream(pool.write)
+# ==========
+
+pool.seek(0)
+
+# ==========
+recv = pt.Protocol()
+recv.load_stream(pool.read)
+# ==========
+
+print('[blue]Extn:', recv.extn)
+print('[blue]Json:', recv.json)
+
+'''
+Extn: .example
+Json:
+{'msg': [1, 2, 3]}
+'''
+```
+
+Protocol 支持链式调用。
+
+```python
+# 发送数据
+data = pt.Protocol(extension='.this_is_extn').upmeta({
+    'msg': [1, 2, 3]
+}).create_stream(sender)
+
+# 接收数据
+recv = pt.Protocol().load_stream(recver)
+```
+
+#### 详细
 
 Netcore 提供它的核心协议以在某些方面（ 如与微控制器通信 ）节省宽带。
 
@@ -89,64 +137,54 @@ def create_stream(self, func):...
 
 此函数会将数据传入 func。
 
-#### 快速使用
-
-通过 Protocol 发送数据。
-
-```python
-from netcore import protocol as pt
-from rich    import print
-import io
-
-pool = io.BytesIO()
-
-# ==========
-data = pt.Protocol(extension='.example')
-data.upmeta({
-    'msg': [1, 2, 3]
-})
-data.create_stream(pool.write)
-# ==========
-
-pool.seek(0)
-
-# ==========
-recv = pt.Protocol()
-recv.load_stream(pool.read)
-# ==========
-
-print('[blue]Extn:', recv.extn)
-print('[blue]Json:', recv.json)
-
-'''
-Extn: .example
-Json:
-{'msg': [1, 2, 3]}
-'''
-```
-
-Protocol 支持链式调用。
-
-```python
-# 发送数据
-data = pt.Protocol(extension='.this_is_extn').upmeta({
-    'msg': [1, 2, 3]
-}).create_stream(sender)
-
-# 接收数据
-recv = pt.Protocol().load_stream(recver)
-```
-
 ### Package
 
 这个类对 Protocol 进行了封装，它支持：
 
 - 检查数据完整性。
-- 将多个 Protocol 拆分成小段发送，数据传输不需要排队。
+- 将多个 Protocol 拆分成小段发送。
 - 返回进度信息。
 - 自定义错误处理函数。
 
-#### 分解
+#### 快速使用
+
+此类通过多线程对数据传输实时监听，因此使用 socket 演示。
+
+```python
+from netcore import protocol as pt
+from rich    import print
+import socket
+
+inp = input('mode[s/c]:')
+
+if inp == 's':
+    print('[blue]Server mode')
+    sk = socket.socket()
+    sk.bind(('0.0.0.0', 5555))
+    sk.listen()
+    conn, addr = sk.accept()
+
+    print('[green]Connected')
+    pk = pt.Package(sender=conn.send, recver=conn.recv, buff=2048)
+    pk.start()
+
+    while True:
+        data = pk.recv()
+        print('Recv:', data)
+
+elif inp == 'c':
+    print('[blue]Client mode')
+    sk = socket.socket()
+    sk.connect(('localhost', 5555))
+    pk = pt.Package(sender=sk.send, recver=sk.recv, buff=2048)
+    pk.start()
+
+    while True:
+        msg = input('msg# ')
+        pk.send(msg)
+```
+
+#### 详细
 
 ```python
 def __init__(self, sender, recver, buff:int=2048):...
@@ -178,6 +216,72 @@ def recv(self):...
 
 接收数据。
 
+```python
+def error(self, func):...
+```
+
+自定义异常处理，func 需要接收一个字符串参数，该字符串用于反应出错位置。
+
+| 数据 |       含义       |
+| :--: | :--------------: |
+| send | 在发送数据时出错 |
+| recv | 在接收数据时出错 |
+
+两者一般是在连接断开时触发。
+
+### Endpoint
+
+使用类似 Flask 的方式对你的业务进行搭建。
+
 #### 快速使用
 
-此类通过多线程对数据传输实时监听，因此使用 socket 演示。
+```pascal
+from netcore import endpoint as ep
+from rich    import print
+import socket
+
+inp = input('mode[s/c]:')
+
+if inp == 's':
+    sk = socket.socket()
+    sk.bind(('0.0.0.0', 6666))
+    sk.listen()
+    conn, addr = sk.accept()
+    
+    # ==========
+    end = ep.Endpoint(conn.send, conn.recv) 
+
+    @end.route('.say')
+    def say(data:ep.Request):
+        print(data.code)
+        data.response('.res', 'recved')
+
+    end.start()
+    # ==========
+
+    conn.close()
+    sk.close()
+
+elif inp == 'c':
+    sk = socket.socket()           
+    sk.connect(('127.0.0.1', 6666))
+
+    # ==========
+    pk = ep.Endpoint(sk.send, sk.recv, buff=2048)
+
+    @pk.route('.res')
+    def res(data:ep.Request):
+        print(data.code)
+
+    pk.start(thread=True)
+    # ==========
+
+    while True:
+        msg = input('> ')
+        if msg == 'exit': break
+        pk.send(ep.Protocol(extension='.say', meta=msg.encode('utf-8')))
+
+    pk.close()
+    sk.close()
+```
+

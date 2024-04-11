@@ -9,15 +9,19 @@ class Request:
         self.__data   = data
 
     @property
-    def data(self):
+    def code(self) -> str:
+        return self.__data.code
+
+    @property
+    def data(self) -> Protocol:
         return self.__data
 
     @property
-    def json(self):
+    def json(self) -> dict:
         return self.__data.json
 
     @property
-    def meta(self):
+    def meta(self) -> bytes:
         return self.__data.meta
     
     def response(self, extn, data) -> bool:
@@ -31,7 +35,8 @@ class Endpoint:
     def __init__(self, sender, recver, buff:int=2048):
         self.__routes = {}
         self.__pakage = Package(sender=sender, recver=recver, buff=buff)
-        self.send = self.__pakage.send
+        self.send  = self.__pakage.send
+        self.error = self.__pakage.error
 
     def start(self, thread=False):
         if self.__pakage.is_run: return
@@ -51,8 +56,10 @@ class Endpoint:
     def __recv_handle(self):
         while self.__pakage.is_run:
             data = self.__pakage.recv()
+            if data == None: break
             reqs = Request(self.__pakage, data)
             self.__handle_request(data.extn, reqs)
+        self.__pakage.close()
 
     def __handle_request(self, extn, data):
         if extn in self.__routes:

@@ -181,7 +181,7 @@ class Protocol:
             temp = func(need)
             if writefunc:
                 writefunc(temp)
-            elif not ignore:
+            if not ignore:
                 data += temp
             seek += len(temp)
             if seek >= length:break # DP: '>='
@@ -189,11 +189,11 @@ class Protocol:
     
     @staticmethod
     def parse_stream_head(func, decoding:str='utf-8') -> tuple:
-        meta_code = func(1)
+        meta_code = Protocol.stream_until(func, 1)
         extn_code = int.from_bytes(meta_code, 'big')
         meta_extn = Protocol.stream_until(func, extn_code)
         extn_meta = meta_extn.decode(decoding)
-        meta_leng = func(4)
+        meta_leng = Protocol.stream_until(func, 4)
         leng_code = struct.unpack('i', meta_leng)[0]
         meta_head = meta_code + meta_extn + meta_leng
         return extn_meta, leng_code, meta_head
@@ -245,10 +245,13 @@ class Bridge:
 
 
 class Package:
-    def __init__(self, sender, recver, buff:int=2048):
+    excode = 1
+
+    def __init__(self, sender, recver, buff:int=2048, handle=None):
         self.buff   = buff
         self.sender = sender
         self.recver = recver
+        self.handle = handle
         self.__isok = False
     
     def start(self):
@@ -265,6 +268,15 @@ class Package:
     @property
     def is_run(self) -> bool:
         return self.__isok
+    
+    def error(self, func):
+        self.handle = func
+    
+    def __error(self, args):
+        print('Error from', args)
+        try:
+            self.handle(args)
+        except: pass
     
     def close(self):
         self.__isok = False
@@ -310,6 +322,10 @@ class Package:
     def __sender(self):
         while self.__isok:
             data = self.__send_queue.get()
+            if data == self.excode:
+                self.__error('send')
+                self.close()
+                break
             if not type(data) == Protocol: continue
 
             info = str(data.extn).split('_')
@@ -337,7 +353,14 @@ class Package:
 
     def __recver(self):
         while self.__isok:
-            data = Protocol().load_stream(self.recver)
+            try:
+                data = Protocol().load_stream(self.recver)
+            except:
+                self.__error('recv')
+                self.__send_queue.put(self.excode)
+                self.__recv_queue.put(None)
+                self.close()
+                break
             if not type(data) == Protocol: continue
 
             info = str(data.extn).split('_')
@@ -367,7 +390,6 @@ class Package:
                 if data['type'] == 'protocol':
                     self.__recv_queue.put(Protocol(extension=data['head']).upmeta(value))
                     temp_pop.append(safe)
-                    print('recved one')
                 elif data['type'] == str:
                     try:
                         result = value.decode()
@@ -375,7 +397,6 @@ class Package:
                         result = value
                     self.__recv_queue.put(result)
                     temp_pop.append(safe)
-                    print('recved one')
                 else:
                     command = f"{data['type']}({value})"
                     try:
@@ -384,6 +405,6 @@ class Package:
                         result = value
                     self.__recv_queue.put(result)
                     temp_pop.append(safe)
-                    print('recved one')
             for safe in temp_pop:
                 self.__recv_pools.pop(safe)
+        self.close()
