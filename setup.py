@@ -4,14 +4,14 @@ with open("README.md", "r", encoding='utf-8') as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="acdpnet",
-    version="2.3.2",
+    name="netcore",
+    version="0.0.1",
     author="Aiden Hopkins",
     author_email="acdphc@qq.com",
     description="A Network Protocol Frame",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/A03HCY/Network-Core",
+    url="https://github.com/A03HCY/Netcore",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
