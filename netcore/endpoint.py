@@ -57,8 +57,8 @@ class Endpoint:
         while self.__pakage.is_run:
             data = self.__pakage.recv()
             if data == None: break
-            reqs = Request(self.__pakage, data)
-            self.__handle_request(data.extn, reqs)
+            requests = Request(self.__pakage, data)
+            self.__handle_request(data.extn, requests)
         self.__pakage.close()
 
     def __handle_request(self, extn, data):
