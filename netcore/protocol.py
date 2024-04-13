@@ -1,7 +1,8 @@
 from   secrets import choice
 from   string  import ascii_letters, digits
+from .datasets import MEM
 import struct
-import ast, json
+import ast, json, os
 import queue, threading
 
 
@@ -247,11 +248,12 @@ class Bridge:
 class Package:
     excode = 1
 
-    def __init__(self, sender, recver, buff:int=2048, handle=None):
+    def __init__(self, sender, recver, buff:int=2048, handle=None, file_buff:bool=True):
         self.buff   = buff
         self.sender = sender
         self.recver = recver
         self.handle = handle
+        self.filebf = file_buff
         self.__isok = False
     
     def start(self):
@@ -295,7 +297,8 @@ class Package:
                 'head': str(data.extn),
                 'type': 'protocol',
                 'leng': data.leng,
-                'chunks': (len(data.meta) + self.buff - 1) // self.buff
+                'chunks': (len(data.meta) + self.buff - 1) // self.buff,
+                'buff': self.buff
             })
             meta.upmeta(data.meta)
         else:
@@ -308,7 +311,8 @@ class Package:
             head.upmeta({
                 'type': str(type(data)),
                 'leng': len(meta.meta),
-                'chunks': (len(meta.meta) + self.buff - 1) // self.buff
+                'chunks': (len(meta.meta) + self.buff - 1) // self.buff,
+                'buff': self.buff
             })
         self.__send_queue.put(head)
         self.__send_queue.put(meta)
@@ -364,29 +368,57 @@ class Package:
             if not type(data) == Protocol: continue
 
             info = str(data.extn).split('_')
+            if len(info) < 2: continue
             extn = info[0]
             safe = info[1]
 
             if info[0] == '.head':
+                length = data.json['leng']
+                chunks = data.json['chunks']
+                use_file = length >= MEM.soft * 0.5 or self.__recv_pools.__sizeof__() >= MEM.soft * 0.2
+                if use_file and not self.filebf:
+                    print(use_file, self.filebf)
+                    print(safe, 'has been ignored')
+                    continue
                 self.__recv_pools[safe] = {
                     'type': data.json['type'],
                     'head': data.json.get('head'),
-                    'leng': data.json['leng'],
-                    'chunks': data.json['chunks'],
-                    'meta': {}
+                    'leng': length,
+                    'chunks': chunks,
+                    'meta': {},
+                    'file': use_file,
+                    'buff': data.json['buff']
                 }
                 for i in range(self.__recv_pools[safe]['chunks']): self.__recv_pools[safe]['meta'][i] = None
+            
+            if not safe in self.__recv_pools: continue
 
+            target = self.__recv_pools[safe]
             if extn == '.meta':
                 current = int(info[2])
                 if not safe in self.__recv_pools: continue
-                self.__recv_pools[safe]['meta'][current] = data.meta
+                use_file = target['file']
+                if not use_file:
+                    target['meta'][current] = data.meta
+                else:
+                    with open(safe+'.netemp', 'ab+') as f:
+                        f.seek(target['buff'] * current)
+                        f.write(data.meta)
+                    target['meta'][current] = True
             
             temp_pop = []
             for safe in self.__recv_pools:
                 data = self.__recv_pools[safe]
                 if None in data['meta'].values(): continue
-                value = b''.join(data['meta'].values())
+
+                # ============================== risk of out of mem by f.read()
+                if data['file']:
+                    with open(safe+'.netemp', 'rb') as f: value = f.read()
+                    os.remove(safe+'.netemp')
+                else:
+                    value = b''.join(data['meta'].values())
+                # ==============================
+
                 if data['type'] == 'protocol':
                     self.__recv_queue.put(Protocol(extension=data['head']).upmeta(value))
                     temp_pop.append(safe)

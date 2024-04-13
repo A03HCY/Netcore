@@ -1,8 +1,21 @@
 import sqlite3
-import hashlib, uuid
+import uuid
 import datetime
 import ast
 
+class MEMLimit:
+    def __init__(self) -> None:
+        self.__soft_limit = self.__hard_limit = 1024 * 1024 *10
+    
+    @property
+    def soft(self) -> int:
+        return self.__soft_limit
+    
+    @property
+    def hard(self) -> int:
+        return self.__hard_limit
+
+MEM = MEMLimit()
 
 def init():
     global _ds
