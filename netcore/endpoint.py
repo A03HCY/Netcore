@@ -39,6 +39,7 @@ class Endpoint:
 
     def start(self, thread=False):
         if self.__pakage.is_run: return
+        self.__reg_function()
         self.__pakage.start()
         if not thread:
             while self.__pakage.is_run:
@@ -52,6 +53,13 @@ class Endpoint:
             return func
         return decorator
     
+    def __reg_function(self):
+        members = dir(self)
+        for member in members:
+            if member.startswith("on_") and callable(getattr(self, member)):
+                print('reg', getattr(self, member))
+                self.__routes[member[3:]] = getattr(self, member)
+    
     def __recv_handle(self):
         while self.__pakage.is_run:
             data = self.__pakage.recv()
@@ -64,8 +72,10 @@ class Endpoint:
                 self.__pakage.send(result)
         self.__pakage.close()
 
-    def __handle_request(self, extn):
+    def __handle_request(self, extn:str):
         if extn in self.__routes:
             return self.__routes[extn]()
+        elif extn.startswith('.') and extn[1:] in self.__routes:
+            return self.__routes[extn[1:]]()
         else:
             return '.handle_error', 'not found'

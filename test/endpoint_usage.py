@@ -28,18 +28,17 @@ elif inp == 'c':
     sk = socket.socket()           
     sk.connect(('127.0.0.1', 6666))
 
-    pk = ep.Endpoint(sk.send, sk.recv, buff=2048)
+    class rrr(ep.Endpoint):
+        def on_res(self):
+            print(get_request().code)
 
-    @pk.route('.res')
-    def res():
-        print(get_request().code)
-
-    pk.start(thread=True)
+    rs = rrr(sk.send, sk.recv, buff=2048)
+    rs.start(thread=True)
 
     while True:
         msg = input('> ')
         if msg == 'exit': break
-        pk.send(ep.Protocol(extension='.say', meta=msg.encode('utf-8')))
+        rs.send(ep.Protocol(extension='.say', meta=msg.encode('utf-8')))
 
-    pk.close()
+    rs.close()
     sk.close()
