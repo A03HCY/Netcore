@@ -46,6 +46,9 @@ class Endpoint:
                 self.__recv_handle()
         else:
             threading.Thread(target=self.__recv_handle).start()
+    
+    def send_pack(self, extn, meta=None):
+        self.__pakage.send(Protocol(extension=extn).upmeta(meta))
 
     def route(self, extn):
         def decorator(func):
