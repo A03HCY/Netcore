@@ -1,12 +1,10 @@
 from  .protocol import Protocol, Package
 import threading
-
+import contextvars
 
 class Request:
-    def __init__(self, pak:Package, data:Protocol) -> None:
-        self.__pakage = pak
-        self.__is_ues = False
-        self.__data   = data
+    def __init__(self, data:Protocol) -> None:
+        self.__data = data
 
     @property
     def code(self) -> str:
@@ -23,13 +21,14 @@ class Request:
     @property
     def meta(self) -> bytes:
         return self.__data.meta
-    
-    def response(self, extn, data) -> bool:
-        if self.__is_ues: return False
-        self.__pakage.send(Protocol(extension=extn).upmeta(data))
-        self.__is_ues = True
-        return True
 
+_request = contextvars.ContextVar('request', default=Request(Protocol()))
+
+def set_request(data):
+    _request.set(Request(data))
+
+def get_request():
+    return _request.get()
 
 class Endpoint:
     def __init__(self, sender, recver, buff:int=2048):
@@ -57,12 +56,16 @@ class Endpoint:
         while self.__pakage.is_run:
             data = self.__pakage.recv()
             if data == None: break
-            requests = Request(self.__pakage, data)
-            self.__handle_request(data.extn, requests)
+            set_request(Request(data))
+            result = self.__handle_request(data.extn)
+            if type(result) in [list, tuple] and len(result) == 2:
+                self.__pakage.send(Protocol(extension=result[0]).upmeta(result[1]))
+            if type(result) == Protocol:
+                self.__pakage.send(result)
         self.__pakage.close()
 
-    def __handle_request(self, extn, data):
+    def __handle_request(self, extn):
         if extn in self.__routes:
-            return self.__routes[extn](data)
+            return self.__routes[extn]()
         else:
-            return '404 Not Found'
+            return '.handle_error', 'not found'

@@ -2,6 +2,8 @@ from netcore import endpoint as ep
 from rich    import print
 import socket
 
+get_request = ep.get_request
+
 inp = input('mode[s/c]:')
 
 if inp == 's':
@@ -13,9 +15,9 @@ if inp == 's':
     end = ep.Endpoint(conn.send, conn.recv)
 
     @end.route('.say')
-    def say(data:ep.Request):
-        print(data.code)
-        data.response('.res', 'recved')
+    def say():
+        print(get_request())
+        return ('.res', 'recved')
 
     end.start()
 
@@ -29,8 +31,8 @@ elif inp == 'c':
     pk = ep.Endpoint(sk.send, sk.recv, buff=2048)
 
     @pk.route('.res')
-    def res(data:ep.Request):
-        print(data.code)
+    def res():
+        print(get_request().code)
 
     pk.start(thread=True)
 
