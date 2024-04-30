@@ -76,6 +76,7 @@ class Endpoint:
         self.__pakage.close()
 
     def __handle_request(self, extn:str):
+        extn = extn.split('<')[0]
         if extn in self.__routes:
             return self.__routes[extn]()
         elif extn.startswith('.') and extn[1:] in self.__routes:
