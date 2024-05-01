@@ -1,4 +1,4 @@
-from  .protocol import Protocol, Package
+from  .protocol import Protocol, Package, extract_text
 import threading
 import contextvars
 
@@ -68,10 +68,12 @@ class Endpoint:
             data = self.__pakage.recv()
             if data == None: break
             set_request(Request(data))
+            safecode = extract_text(data.extn, '<', '>')
             result = self.__handle_request(data.extn)
             if type(result) in [list, tuple] and len(result) == 2:
-                self.__pakage.send(Protocol(extension=result[0]).upmeta(result[1]))
+                self.__pakage.send(Protocol(extension=result[0]+f'<{safecode}>').upmeta(result[1]))
             if type(result) == Protocol:
+                result.extn += f'<{safecode}>'
                 self.__pakage.send(result)
         self.__pakage.close()
 

@@ -259,6 +259,10 @@ class Package:
         self.handle = handle
         self.filebf = file_buff
         self.__isok = False
+        self.gate   = {
+            'recv': None,
+            'send': None,
+        }
     
     def start(self):
         self.__isok = True
@@ -294,12 +298,15 @@ class Package:
     def abort(self, safecode:str):
         ...
     
-    def send(self, data, safecode:str=None):
+    def send(self, data, code:str=None):
         if not self.__isok: return
-        if safecode:
-            code = safecode
+        if code:
+            code = code
         else:
             code = safecode()
+        if callable(self.gate['send']):
+            try: data = self.gate['send'](data)
+            except: pass
         if type(data) == Protocol:
             head = Protocol(extension=f'.head_{code}')
             meta = Protocol(extension=f'.meta_{code}_0')
@@ -344,6 +351,9 @@ class Package:
                 continue
         result = self.__recv_queue.get(block=True)
         self.__recv_queue.task_done()
+        if callable(self.gate['recv']):
+            try: result = self.gate['recv'](result)
+            except: pass
         return result
     
     def __sender(self):
