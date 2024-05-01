@@ -2,6 +2,8 @@ from netcore import endpoint as ep
 from rich    import print
 import socket
 
+get_request = ep.get_request
+
 inp = input('mode[s/c]:')
 
 if inp == 's':
@@ -13,9 +15,9 @@ if inp == 's':
     end = ep.Endpoint(conn.send, conn.recv)
 
     @end.route('.say')
-    def say(data:ep.Request):
-        print(data.code)
-        data.response('.res', 'recved')
+    def say():
+        print(get_request())
+        return ('.res', 'recved')
 
     end.start()
 
@@ -26,18 +28,17 @@ elif inp == 'c':
     sk = socket.socket()           
     sk.connect(('127.0.0.1', 6666))
 
-    pk = ep.Endpoint(sk.send, sk.recv, buff=2048)
+    class rrr(ep.Endpoint):
+        def on_res(self):
+            print(get_request().code)
 
-    @pk.route('.res')
-    def res(data:ep.Request):
-        print(data.code)
-
-    pk.start(thread=True)
+    rs = rrr(sk.send, sk.recv, buff=2048)
+    rs.start(thread=True)
 
     while True:
         msg = input('> ')
         if msg == 'exit': break
-        pk.send(ep.Protocol(extension='.say', meta=msg.encode('utf-8')))
+        rs.send(ep.Protocol(extension='.say', meta=msg.encode('utf-8')))
 
-    pk.close()
+    rs.close()
     sk.close()

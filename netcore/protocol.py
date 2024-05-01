@@ -2,9 +2,13 @@ from   secrets import choice
 from   string  import ascii_letters, digits
 from .datasets import MEM
 import struct
-import ast, json, os
+import ast, json, os, re
 import queue, threading
 
+def extract_text(text, start_char, end_char):
+    pattern = re.escape(start_char) + r"(.*?)" + re.escape(end_char)
+    matches = re.findall(pattern, text)
+    return matches
 
 def safecode(length:int=4):
     res = ''.join(choice(ascii_letters + digits) for x in range(length))
@@ -255,6 +259,10 @@ class Package:
         self.handle = handle
         self.filebf = file_buff
         self.__isok = False
+        self.gate   = {
+            'recv': None,
+            'send': None,
+        }
     
     def start(self):
         self.__isok = True
@@ -287,9 +295,18 @@ class Package:
     def block(self, ifok):
         while not ifok: pass
     
-    def send(self, data):
+    def abort(self, safecode:str):
+        ...
+    
+    def send(self, data, code:str=None):
         if not self.__isok: return
-        code = safecode()
+        if code:
+            code = code
+        else:
+            code = safecode()
+        if callable(self.gate['send']):
+            try: data = self.gate['send'](data)
+            except: pass
         if type(data) == Protocol:
             head = Protocol(extension=f'.head_{code}')
             meta = Protocol(extension=f'.meta_{code}_0')
@@ -317,10 +334,26 @@ class Package:
         self.__send_queue.put(head)
         self.__send_queue.put(meta)
     
-    def recv(self):
+    def recv(self, safecode:str=None):
         if not self.__isok: return
+        while safecode:
+            result = self.__recv_queue.get(block=True)
+            if type(result) != Protocol:
+                self.__recv_queue.task_done()
+                self.__recv_queue.put(result)
+                continue
+            code = extract_text(result.extn, '<', '>')[0]
+            if code == safecode:
+                return result
+            else:
+                self.__recv_queue.task_done()
+                self.__recv_queue.put(result)
+                continue
         result = self.__recv_queue.get(block=True)
         self.__recv_queue.task_done()
+        if callable(self.gate['recv']):
+            try: result = self.gate['recv'](result)
+            except: pass
         return result
     
     def __sender(self):
@@ -420,7 +453,7 @@ class Package:
                 # ==============================
 
                 if data['type'] == 'protocol':
-                    self.__recv_queue.put(Protocol(extension=data['head']).upmeta(value))
+                    self.__recv_queue.put(Protocol(extension=data['head']+f'<{safe}>').upmeta(value))
                     temp_pop.append(safe)
                 elif data['type'] == str:
                     try:
