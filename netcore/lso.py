@@ -7,7 +7,9 @@ from random import choices
 from string import ascii_letters, digits
 
 from queue import Queue
+from threading import Thread
 import json
+import select
 
 class Utils:
     @staticmethod
@@ -76,7 +78,7 @@ class LsoProtocol:
                 self._extension = f.read(extn_length)
     
     def __str__(self):
-        return self._extension.decode(self.encoding)
+        return self._extension
     
     @property
     def length(self) -> int:
@@ -91,14 +93,20 @@ class LsoProtocol:
         return len(self._meta)
     
     @property
-    def extension(self) -> str:
+    def meta(self) -> bytes:
+        return self._meta
+    
+    @property
+    def extension(self) -> str|bytes:
         """
         获取当前扩展名。
 
         Returns:
             str: 扩展名的字符串。
         """
-        return self._extension.decode(encoding=self.encoding)
+        if isinstance(self._extension, bytes):
+            return self._extension.decode(encoding=self.encoding)
+        return self._extension
     
     @extension.setter
     def extension(self, value: Union[bytes, str]) -> None:
@@ -405,12 +413,18 @@ class LsoProtocol:
             extension_length = unpack('i', head[:4])[0]  # 读取扩展名长度
             extension = head[4:4 + extension_length].decode(self.encoding)  # 读取扩展名
             meta_length = unpack('i', head[4 + extension_length:8 + extension_length])[0]  # 读取元数据长度
-            self._add_meta(head)  # 将头部数据添加到元数据中
+            if self.local:
+                self._add_meta(head)  # 将头部数据添加到元数据中
         else:
             # 从流中接收头部信息
-            extension_length = unpack('i', self.function_recv(function=function, length=4, handler=self._add_meta, buff=buff))[0]
-            extension = self.function_recv(function=function, length=extension_length, handler=self._add_meta, buff=buff).decode(self.encoding)
-            meta_length = unpack('i', self.function_recv(function=function, length=4, handler=self._add_meta, buff=buff))[0]
+            if self.local:
+                extension_length = unpack('i', self.function_recv(function=function, length=4, handler=self._add_meta, buff=buff))[0]
+                extension = self.function_recv(function=function, length=extension_length, handler=self._add_meta, buff=buff).decode(self.encoding)
+                meta_length = unpack('i', self.function_recv(function=function, length=4, handler=self._add_meta, buff=buff))[0]
+            else:
+                extension_length = unpack('i', self.function_recv(function=function, length=4, buff=buff))[0]
+                extension = self.function_recv(function=function, length=extension_length, buff=buff).decode(self.encoding)
+                meta_length = unpack('i', self.function_recv(function=function, length=4, buff=buff))[0]
             
         # 接收所有元数据
         self._extension = extension
@@ -511,11 +525,16 @@ class Pipe:
         self.send_function = send_function
         self.mission_head = Queue()
         self.send_pool: dict[str, Queue|Generator] = {}
-        self.recv_pool: dict[str, Queue|Generator] = {}
+        self.recv_pool: dict[str, bytes] = {}
+        self.temp_pool: dict[str, dict] = {}
         self.info: dict[str, dict] = {}
+
+        self.recv_thread = Thread(target=self._recv_thread)
+        self.send_thread = Thread(target=self._send_thread)
     
-    def _recv(self) -> bytes:
+    def _recv(self) -> tuple[LsoProtocol, dict]:
         lso = LsoProtocol().load_stream(self.recv_function)
+        print(lso)
         info = json.loads(lso.extension)
         return lso, info
     
@@ -535,17 +554,22 @@ class Pipe:
         self.info[extension] = {
             'length': len(data)
         }
-        self.mission_head.put(extension)
+        self.mission_head.put({
+            'extension': extension,
+            'length': len(data),
+        })
         return extension
     
     def _send_thread(self):
         while True:
-            if not self.mission_head.empty():
-                mission = self.mission_head.get()
-                self._send(
-
-
-            for extension, queue in self.send_pool.items():
+            send_pool_copy = list(self.send_pool.items())
+            for extension, queue in send_pool_copy:
+                while not self.mission_head.empty():
+                    mission = self.mission_head.get()
+                    self._send(json.dumps(mission), {
+                        'type': 'mission',
+                    })
+                    self.mission_head.task_done()
                 info = self.info[extension]
                 if queue.empty():
                     print(f'{extension} mission completed. size: {info["length"]}')
@@ -554,10 +578,32 @@ class Pipe:
                     continue
                 data = queue.get()
                 self._send(data, {
-                    'extension': extension
+                    'type': 'data',
+                    'extension': extension,
                 })
                 queue.task_done()
     
     def _recv_thread(self):
         while True:
             lso, info = self._recv()
+            if info['type'] == 'mission':
+                print(lso.meta)
+                data = json.loads(lso.meta)
+                print(data)
+                self.temp_pool[data['extension']] = {
+                    'length': data['length'],
+                    'recv': 0,
+                    'data': bytearray(),
+                }
+                continue
+            self.temp_pool[info['extension']]['data'] += lso.meta
+            self.temp_pool[info['extension']]['recv'] += len(lso.meta)
+            if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
+                self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
+                self.temp_pool.pop(info['extension'])
+                continue
+            if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
+                raise ValueError(f'{info["extension"]} recv length error.')
+    def start(self):
+        self.recv_thread.start()
+        self.send_thread.start()
