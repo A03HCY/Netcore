@@ -3,7 +3,47 @@ from struct import pack, unpack
 from sys    import version_info as build_version
 from os     import path, read as osread
 from mmap   import mmap, ACCESS_WRITE
+from random import choices
+from string import ascii_letters, digits
 
+from queue import Queue
+import json
+
+class Utils:
+    @staticmethod
+    def bytes_format(value:int, space:str=' ', point:int=2) -> str:
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB']
+        size = 1024.0
+        for i in range(len(units)):
+            if (value / size) < 1:
+                return ''.join([str(round(value, point)), space, units[i]])
+            value = value / size
+    
+    @staticmethod
+    def calc_divisional_range(size, chuck=10) -> list:
+        step = size//chuck
+        arr = list(range(0, size, step))
+        result = []
+        for i in range(len(arr)-1):
+            s_pos, e_pos = arr[i], arr[i+1]-1
+            result.append([s_pos, e_pos])
+        result[-1][-1] = size-1
+        return result
+    
+    @staticmethod
+    def split_bytes_into_chunks(data, chunk_size=4096) -> list:
+        chunks = []
+        num_chunks = (len(data) + chunk_size - 1) // chunk_size
+        for i in range(num_chunks):
+            start = i * chunk_size
+            end = (i + 1) * chunk_size
+            chunk = data[start:end]
+            chunks.append(chunk)
+        return chunks
+    
+    @staticmethod
+    def safe_code(length:int) -> str:
+        return ''.join(choices(ascii_letters + digits, k=length))
 
 '''
 LsoPrococol:
@@ -324,8 +364,6 @@ class LsoProtocol:
                 data = self._meta[i:i + buff]
                 yield data if isinstance(data, bytearray) else bytearray(bytes(data, encoding=self.encoding))
     
-
-    
     def load_stream(
         self, 
         function: Callable[[Optional[int]], Union[bytes, bytearray]], 
@@ -464,4 +502,62 @@ class LsoProtocol:
         """
         if function_name == 'set_length':
             return self._set_length
-        
+
+
+
+class Pipe:
+    def __init__(self, recv_function:Callable[[Optional[int]], bytes], send_function:Callable[[bytes], None]):
+        self.recv_function = recv_function
+        self.send_function = send_function
+        self.mission_head = Queue()
+        self.send_pool: dict[str, Queue|Generator] = {}
+        self.recv_pool: dict[str, Queue|Generator] = {}
+        self.info: dict[str, dict] = {}
+    
+    def _recv(self) -> bytes:
+        lso = LsoProtocol().load_stream(self.recv_function)
+        info = json.loads(lso.extension)
+        return lso, info
+    
+    def _send(self, data:bytes, info:dict) -> None:
+        lso = LsoProtocol(local=None, encoding='utf-8', buff=2048)
+        lso.extension = json.dumps(info)
+        lso.set_meta(data)
+        for i in lso.full_data():
+            self.send_function(i)
+    
+    def create_mission(self, data:bytes, extension:Optional[str]=None, buff:int=4096) -> str:
+        extension = extension or Utils.safe_code(6)
+        queue = Queue()
+        for i in Utils.split_bytes_into_chunks(data, buff):
+            queue.put(i)
+        self.send_pool[extension] = queue
+        self.info[extension] = {
+            'length': len(data)
+        }
+        self.mission_head.put(extension)
+        return extension
+    
+    def _send_thread(self):
+        while True:
+            if not self.mission_head.empty():
+                mission = self.mission_head.get()
+                self._send(
+
+
+            for extension, queue in self.send_pool.items():
+                info = self.info[extension]
+                if queue.empty():
+                    print(f'{extension} mission completed. size: {info["length"]}')
+                    self.send_pool.pop(extension)
+                    self.info.pop(extension)
+                    continue
+                data = queue.get()
+                self._send(data, {
+                    'extension': extension
+                })
+                queue.task_done()
+    
+    def _recv_thread(self):
+        while True:
+            lso, info = self._recv()
