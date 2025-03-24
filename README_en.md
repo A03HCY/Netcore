@@ -32,11 +32,68 @@ pip install netcore
 
 ## Quick Start
 
-Basic usage example:
+### Server Example
 
 ```python
-from netcore import Endpoint, Pipe
+from netcore import Endpoint, Pipe, Response, request
+import socket
 
+# Create TCP server
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(('localhost', 8080))
+server.listen(5)
+conn, addr = server.accept()
+
+# Create communication pipe and endpoint
+pipe = Pipe(conn.recv, conn.send)
+endpoint = Endpoint(pipe)
+
+# Register echo handler
+@endpoint.request('echo')
+def handle_echo():
+    message = request.json.get('message', '')
+    return Response('echo', {"reply": f"Server echo: {message}"})
+
+# Register default handler
+@endpoint.default
+def handle_default(data, info):
+    endpoint.send_response({"status": "ok"}, info)
+
+# Start service
+endpoint.start()
+```
+
+### Client Example
+
+```python
+from netcore import Endpoint, Pipe, Response, request
+import socket
+
+# Connect to server
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect(('localhost', 8080))
+
+# Create communication pipe and endpoint
+pipe = Pipe(client.recv, client.send)
+endpoint = Endpoint(pipe)
+
+# Register message handler
+@endpoint.request('echo')
+def handle_echo():
+    reply = request.json.get('reply', '')
+    print(f"Received echo: {reply}")
+    return None
+
+# Start client
+endpoint.start(block=False)
+
+# Send message
+endpoint.send('echo', {"message": "Hello!"})
+```
+
+## Custom Transport Example
+
+```python
 # Define custom transport functions
 def recv_func(size): 
     return your_device.read(size)
