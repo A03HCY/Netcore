@@ -5,10 +5,10 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setuptools.setup(
     name="netcore",
-    version="0.0.1",
+    version="0.1.0",
     author="Aiden Hopkins",
     author_email="acdphc@qq.com",
-    description="A Network Protocol Frame",
+    description="A Network Protocol Framework",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/A03HCY/Netcore",
