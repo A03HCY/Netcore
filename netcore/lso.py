@@ -8,6 +8,10 @@ from string import ascii_letters, digits
 from queue     import Queue
 from threading import Thread
 import json
+import logging
+
+# 配置日志记录器
+logger = logging.getLogger("netcore.lso")
 
 class Utils:
     """工具类，提供各种实用的静态方法。
@@ -703,7 +707,7 @@ class Pipe:
                     info = self.misson_info[extension]
                     # 发送任务数据
                     if queue.empty():
-                        print(f'{extension} mission completed. size: {info["length"]}')
+                        logger.info(f'{extension} mission completed. size: {info["length"]}')
                         self.send_pool.pop(extension)
                         self.misson_info.pop(extension)
                         continue
@@ -761,11 +765,11 @@ class Pipe:
             exception: 可选的异常对象
         """
         if message == 'error':
-            print(f'Pipe error: {exception}')
+            logger.error(f'Pipe error: {exception}')
         if message == 'close':
-            print('Pipe closed.')
+            logger.info('Pipe closed.')
         if message == 'with_exception':
-            print('Pipe closed with recv exception.')
+            logger.warning('Pipe closed with recv exception.')
 
     def _recv_error_handler(self, message:str, exception:Exception=None):
         """处理接收过程中的错误。
@@ -775,9 +779,9 @@ class Pipe:
             exception: 可选的异常对象
         """
         if message == 'error':
-            print(f'Pipe error: {exception}')
+            logger.error(f'Pipe error: {exception}')
         if message == 'close':
-            print('Pipe closed.')
+            logger.info('Pipe closed.')
     
     def send(self, data:bytes, info:dict={}):
         """发送数据和相关信息。

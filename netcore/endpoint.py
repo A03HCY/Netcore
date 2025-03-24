@@ -3,6 +3,10 @@ from typing import Any, Dict, Callable
 import json
 import threading
 import time
+import logging
+
+# 配置日志记录器
+logger = logging.getLogger("netcore")
 
 # 全局请求对象，用于在处理请求时访问
 class Request:
@@ -112,7 +116,7 @@ class Endpoint:
                     del self.response_handlers[message_id]  # 处理完成后移除handler
                     continue
                 except Exception as e:
-                    print(f"处理响应 ID '{message_id}' 时出错: {e}")
+                    logger.error(f"处理响应 ID '{message_id}' 时出错: {e}")
                     continue
             
             route = info.get('route', '')
@@ -128,13 +132,13 @@ class Endpoint:
                             'message_id': info.get('message_id')  # 返回相同的消息ID
                         })
                 except Exception as e:
-                    print(f"处理路由 '{route}' 时出错: {e}")
+                    logger.error(f"处理路由 '{route}' 时出错: {e}")
             # 没有路由或路由未注册，使用默认处理器
             elif self.default_handler:
                 try:
                     self.default_handler(data, info)
                 except Exception as e:
-                    print(f"默认处理器处理消息时出错: {e}")
+                    logger.error(f"默认处理器处理消息时出错: {e}")
     
     def send(self, route: str, data: Any, callback: Callable = None) -> str:
         """发送请求到对端
