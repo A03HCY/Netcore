@@ -97,6 +97,13 @@ class LsoProtocol:
         return self._meta
     
     @property
+    def json(self) -> dict:
+        try:
+            return json.loads(self._meta)
+        except:
+            return {}
+    
+    @property
     def extension(self) -> str|bytes:
         """
         获取当前扩展名。
@@ -531,6 +538,12 @@ class Pipe:
 
         self.recv_thread = Thread(target=self._recv_thread)
         self.send_thread = Thread(target=self._send_thread)
+
+        self.recv_exception = False
+    
+    def recv(self) -> tuple[bytes, bytes]:
+        if not self.recv_pool: return
+        return self.recv_pool.popitem()
     
     def _recv(self) -> tuple[LsoProtocol, dict]:
         lso = LsoProtocol().load_stream(self.recv_function)
@@ -545,7 +558,7 @@ class Pipe:
         for i in lso.full_data():
             self.send_function(i)
     
-    def create_mission(self, data:bytes, extension:Optional[str]=None, buff:int=4096) -> str:
+    def create_mission(self, data:bytes, info:dict={}, extension:Optional[str]=None, buff:int=4096) -> str:
         extension = extension or Utils.safe_code(6)
         queue = Queue()
         for i in Utils.split_bytes_into_chunks(data, buff):
@@ -554,56 +567,92 @@ class Pipe:
         self.info[extension] = {
             'length': len(data)
         }
+        # 保存任务到待发送队列
         self.mission_head.put({
             'extension': extension,
             'length': len(data),
+            'info': info,
         })
         return extension
     
     def _send_thread(self):
-        while True:
-            send_pool_copy = list(self.send_pool.items())
-            for extension, queue in send_pool_copy:
-                while not self.mission_head.empty():
-                    mission = self.mission_head.get()
-                    self._send(json.dumps(mission), {
-                        'type': 'mission',
+        try:
+            while True:
+                if self.recv_exception:
+                    self.recv_exception = False
+                    self._send_error_handler('with_exception')
+                send_pool_copy = list(self.send_pool.items())
+                for extension, queue in send_pool_copy:
+                    # 发送任务头
+                    while not self.mission_head.empty():
+                        mission = self.mission_head.get()
+                        self._send(json.dumps(mission), {
+                            'type': 'mission',
+                        })
+                        self.mission_head.task_done()
+                    info = self.info[extension]
+                    # 发送任务数据
+                    if queue.empty():
+                        print(f'{extension} mission completed. size: {info["length"]}')
+                        self.send_pool.pop(extension)
+                        self.info.pop(extension)
+                        continue
+                    data = queue.get()
+                    self._send(data, {
+                        'type': 'data',
+                        'extension': extension,
                     })
-                    self.mission_head.task_done()
-                info = self.info[extension]
-                if queue.empty():
-                    print(f'{extension} mission completed. size: {info["length"]}')
-                    self.send_pool.pop(extension)
-                    self.info.pop(extension)
-                    continue
-                data = queue.get()
-                self._send(data, {
-                    'type': 'data',
-                    'extension': extension,
-                })
-                queue.task_done()
+                    queue.task_done()
+        except KeyboardInterrupt:
+            self._send_error_handler('close')
+        except Exception as e:
+            self._send_error_handler('error', e)
     
     def _recv_thread(self):
-        while True:
-            lso, info = self._recv()
-            if info['type'] == 'mission':
-                print(lso.meta)
-                data = json.loads(lso.meta)
-                print(data)
-                self.temp_pool[data['extension']] = {
-                    'length': data['length'],
-                    'recv': 0,
-                    'data': bytearray(),
-                }
-                continue
-            self.temp_pool[info['extension']]['data'] += lso.meta
-            self.temp_pool[info['extension']]['recv'] += len(lso.meta)
-            if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
-                self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
-                self.temp_pool.pop(info['extension'])
-                continue
-            if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
-                raise ValueError(f'{info["extension"]} recv length error.')
+        try:
+            while True:
+                lso, info = self._recv()
+                if info['type'] == 'mission':
+                    # 接收任务头
+                    data = lso.json
+                    self.temp_pool[data['extension']] = {
+                        'length': data['length'],
+                        'recv': 0,
+                        'data': bytearray(),
+                        'info': data['info'],
+                    }
+                    continue
+                # 接收任务数据
+                self.temp_pool[info['extension']]['data'] += lso.meta
+                self.temp_pool[info['extension']]['recv'] += len(lso.meta)
+                # 接收任务完成
+                if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
+                    self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
+                    self.temp_pool.pop(info['extension'])
+                    continue
+                # 接收任务数据错误
+                if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
+                    raise ValueError(f'{info["extension"]} recv length error.')
+        except KeyboardInterrupt:
+            self._recv_error_handler('close')
+        except Exception as e:
+            self.recv_exception = True
+            self._recv_error_handler('error', e)
+    
+    def _send_error_handler(self, message:str, exception:Exception=None):
+        if message == 'error':
+            print(f'Pipe error: {exception}')
+        if message == 'close':
+            print('Pipe closed.')
+        if message == 'with_exception':
+            print('Pipe closed with recv exception.')
+
+    def _recv_error_handler(self, message:str, exception:Exception=None):
+        if message == 'error':
+            print(f'Pipe error: {exception}')
+        if message == 'close':
+            print('Pipe closed.')
+
     def start(self):
         self.recv_thread.start()
         self.send_thread.start()
