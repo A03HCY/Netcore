@@ -61,7 +61,7 @@ endpoint.start()
 
 ## Documentation
 
-For detailed documentation, visit [docs URL]
+For detailed documentation, visit [https://netcore.acdp.top](https://netcore.acdp.top)
 
 ## License
 

@@ -1,6 +1,6 @@
 # Netcore Documentation
 
-Welcome to the Netcore documentation. This documentation will help you understand and use the Netcore framework effectively.
+Welcome to the Netcore documentation. This documentation is also available online at [https://netcore.acdp.top](https://netcore.acdp.top).
 
 ## Contents
 

@@ -63,7 +63,7 @@ endpoint.start()
 
 ## 文档
 
-详细文档请访问 [docs URL]
+详细文档请访问 [https://netcore.acdp.top](https://netcore.acdp.top)
 
 ## 许可证
 
