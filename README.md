@@ -1,127 +1,186 @@
 # Netcore
 
-[English](README_en.md) | 简体中文
+[![status](https://joss.theoj.org/papers/08b1c73b184c1341f51e01ee052647ae/status.svg)](https://joss.theoj.org/papers/08b1c73b184c1341f51e01ee052647ae) ![PyPI - Version](https://img.shields.io/pypi/v/netcore?label=PyPI&color=green)
 
-Netcore 是一个轻量级且可扩展的通信框架，提供灵活的协议封装和通信管理机制。通过抽象传输层，它使开发者能够实现任何自定义通信方法，同时保持一致的接口。
+English | [简体中文](README_zh.md) 
 
-## 特性
+Netcore is a lightweight communication framework that enables concurrent message transmission over a single connection. By implementing a message chunking and scheduling mechanism similar to CPU time-slicing, it allows multiple messages to be sent and received simultaneously without establishing multiple connections.
 
-- 灵活的协议层
-  - 可扩展的二进制协议
-  - 支持 JSON 和原始数据格式
-  - 可配置的大数据分块
-  - 内存和文件存储选项
+## Core Features
 
-- 通用传输层
-  - 抽象的传输接口
-  - 异步数据传输
-  - 自动消息队列
-  - 支持任意自定义传输实现
+- Concurrent Message Transmission
+  - Single connection handles multiple concurrent messages
+  - Automatic message chunking and reassembly
+  - Message scheduling and prioritization
+  - Non-blocking message transmission
 
-- 错误处理
-  - 标准日志系统
-  - 异常管理
-  - 数据完整性检查
-  - 线程安全机制
+- Smart Message Management
+  - Unique message ID tracking
+  - Automatic message queuing
+  - Message priority handling
+  - Message completion verification
 
-## 安装
+- Protocol Layer
+  - Binary protocol with message chunking
+  - Support for JSON and raw data formats
+  - Configurable chunk sizes
+  - Memory and file-based storage options
 
-使用 pip 安装:
+- Transport Layer Abstraction
+  - Universal transport interface
+  - Asynchronous data transmission
+  - Thread safety mechanisms
+  - Custom transport support
 
-```bash
-pip install netcore
-```
+## Advanced Features
 
-## 快速开始
+- Blueprint System
+  - Route grouping and prefixing
+  - Modular application structure
+  - Middleware support at blueprint level
+  - Isolated error handling per blueprint
 
-### 服务器示例
+- Event System
+  - Event subscription and publishing
+  - One-time event handlers
+  - System event monitoring
+  - Asynchronous event processing
+
+- Task Scheduler
+  - Delayed task execution
+  - Periodic task scheduling
+  - Priority-based scheduling
+  - Thread-safe task management
+
+- Cache System
+  - In-memory caching
+  - TTL (Time-To-Live) support
+  - Automatic cache cleanup
+  - Thread-safe operations
+
+## Quick Start
+
+### Server Example
 
 ```python
 from netcore import Endpoint, Pipe, Response, request
 import socket
 
-# 创建 TCP 服务器
+# Create TCP server
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server.bind(('localhost', 8080))
 server.listen(5)
 conn, addr = server.accept()
 
-# 创建通信管道和终端
+# Create pipe and endpoint
 pipe = Pipe(conn.recv, conn.send)
 endpoint = Endpoint(pipe)
 
-# 注册回声处理器
-@endpoint.request('echo')
-def handle_echo():
-    message = request.json.get('message', '')
-    return Response('echo', {"reply": f"服务器回声: {message}"})
+# Register handlers for concurrent messages
+@endpoint.request('message1')
+def handle_message1():
+    # This handler can run while other messages are being processed
+    return Response('message1', {"status": "processed"})
 
-# 注册默认处理器
-@endpoint.default
-def handle_default(data, info):
-    endpoint.send_response({"status": "ok"}, info)
+@endpoint.request('message2')
+def handle_message2():
+    # Another concurrent handler
+    return Response('message2', {"status": "processed"})
 
-# 启动服务
+# Start service
 endpoint.start()
 ```
 
-### 客户端示例
+### Client Example
 
 ```python
 from netcore import Endpoint, Pipe, Response, request
 import socket
 
-# 连接到服务器
+# Connect to server
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 client.connect(('localhost', 8080))
 
-# 创建通信管道和终端
+# Create pipe and endpoint
 pipe = Pipe(client.recv, client.send)
 endpoint = Endpoint(pipe)
 
-# 注册消息处理器
-@endpoint.request('echo')
-def handle_echo():
-    reply = request.json.get('reply', '')
-    print(f"收到回声: {reply}")
-    return None
-
-# 启动客户端
+# Start client (non-blocking)
 endpoint.start(block=False)
 
-# 发送消息
-endpoint.send('echo', {"message": "Hello!"})
+# Send multiple messages concurrently
+endpoint.send('message1', {"data": "First message"})
+endpoint.send('message2', {"data": "Second message"})
+# Both messages will be processed concurrently
 ```
 
-## 自定义传输示例
+## Advanced Usage Examples
 
+### Blueprint Example
 ```python
-# 定义自定义传输函数
-def recv_func(size): 
-    return your_device.read(size)
-    
-def send_func(data):
-    your_device.write(data)
+from netcore import Endpoint, Blueprint, Response, request
 
-# 创建通信管道
-pipe = Pipe(recv_func, send_func)
+# Create a blueprint for user-related routes
+user_bp = Blueprint("users", "/user")
 
-# 创建终端
-endpoint = Endpoint(pipe)
+@user_bp.request("/list")
+def user_list():
+    return Response("/user/list", {"users": ["user1", "user2"]})
 
-# 注册路由处理器
-@endpoint.route("echo")
-def handle_echo():
-    return Response("echo", request.data)
-
-# 启动服务
-endpoint.start()
+# Register blueprint to endpoint
+endpoint.register_blueprint(user_bp)
 ```
 
-## 文档
+### Event System Example
+```python
+# Subscribe to events
+@endpoint.event.on('start')
+def on_start():
+    print("Service started")
 
-详细文档请访问 [https://netcore.acdp.top](https://netcore.acdp.top)
+# One-time event
+@endpoint.event.once('initialize')
+def on_init():
+    print("First-time initialization")
 
-## 许可证
+# Emit events
+endpoint.event.emit('custom_event', data={"type": "notification"})
+```
 
-本项目采用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。 
+### Task Scheduler Example
+```python
+# Schedule periodic task
+def periodic_check():
+    print("Performing periodic check")
+
+endpoint.scheduler.schedule(periodic_check, delay=5, interval=60)  # Run every 60s after 5s delay
+```
+
+### Cache System Example
+```python
+# Cache expensive operations
+@endpoint.request('/data')
+def get_data():
+    # Try to get from cache
+    data = endpoint.cache.get("expensive_data")
+    if data is None:
+        # Compute and cache for 5 minutes
+        data = compute_expensive_data()
+        endpoint.cache.set("expensive_data", data, ttl=300)
+    return Response("/data", data)
+```
+
+## How It Works
+
+1. **Message Chunking**: Large messages are automatically split into smaller chunks
+2. **Concurrent Processing**: Each message is processed independently
+3. **Scheduling**: Chunks from different messages are interleaved for efficient transmission
+4. **Reassembly**: Message chunks are automatically reassembled at the destination
+
+## Documentation
+
+For detailed documentation, visit [https://netcore.acdp.top](https://netcore.acdp.top)
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details. 

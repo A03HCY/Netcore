@@ -11,4 +11,4 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # 导出版本信息
-__version__ = "0.1.0"
+__version__ = "0.1.1"
