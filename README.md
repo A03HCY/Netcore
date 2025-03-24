@@ -34,11 +34,68 @@ pip install netcore
 
 ## 快速开始
 
-基本使用示例：
+### 服务器示例
 
 ```python
-from netcore import Endpoint, Pipe
+from netcore import Endpoint, Pipe, Response, request
+import socket
 
+# 创建 TCP 服务器
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(('localhost', 8080))
+server.listen(5)
+conn, addr = server.accept()
+
+# 创建通信管道和终端
+pipe = Pipe(conn.recv, conn.send)
+endpoint = Endpoint(pipe)
+
+# 注册回声处理器
+@endpoint.request('echo')
+def handle_echo():
+    message = request.json.get('message', '')
+    return Response('echo', {"reply": f"服务器回声: {message}"})
+
+# 注册默认处理器
+@endpoint.default
+def handle_default(data, info):
+    endpoint.send_response({"status": "ok"}, info)
+
+# 启动服务
+endpoint.start()
+```
+
+### 客户端示例
+
+```python
+from netcore import Endpoint, Pipe, Response, request
+import socket
+
+# 连接到服务器
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect(('localhost', 8080))
+
+# 创建通信管道和终端
+pipe = Pipe(client.recv, client.send)
+endpoint = Endpoint(pipe)
+
+# 注册消息处理器
+@endpoint.request('echo')
+def handle_echo():
+    reply = request.json.get('reply', '')
+    print(f"收到回声: {reply}")
+    return None
+
+# 启动客户端
+endpoint.start(block=False)
+
+# 发送消息
+endpoint.send('echo', {"message": "Hello!"})
+```
+
+## 自定义传输示例
+
+```python
 # 定义自定义传输函数
 def recv_func(size): 
     return your_device.read(size)
@@ -63,7 +120,7 @@ endpoint.start()
 
 ## 文档
 
-详细文档请访问 [docs URL]
+详细文档请访问 [https://netcore.acdp.top](https://netcore.acdp.top)
 
 ## 许可证
 
