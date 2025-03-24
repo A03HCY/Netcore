@@ -1,19 +1,37 @@
 from typing import Callable, Union, Optional, Generator, Tuple
 from struct import pack, unpack
-from sys    import version_info as build_version
 from os     import path, read as osread
 from mmap   import mmap, ACCESS_WRITE
 from random import choices
 from string import ascii_letters, digits
 
-from queue import Queue
+from queue     import Queue
 from threading import Thread
 import json
-import select
 
 class Utils:
+    """工具类，提供各种实用的静态方法。
+    
+    此类包含多种帮助函数，用于格式化数据、分割数据块、生成安全码等操作。
+    所有方法都是静态的，可以直接通过类名调用。
+    """
+    
     @staticmethod
     def bytes_format(value:int, space:str=' ', point:int=2) -> str:
+        """将字节大小格式化为人类可读的字符串。
+        
+        Args:
+            value: 字节数量
+            space: 数字和单位之间的分隔符，默认为空格
+            point: 小数点后保留的位数，默认为2
+            
+        Returns:
+            str: 格式化后的字符串，如 "1.25 KB"
+            
+        Examples:
+            >>> Utils.bytes_format(1500)
+            '1.46 KB'
+        """
         units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB']
         size = 1024.0
         for i in range(len(units)):
@@ -23,6 +41,19 @@ class Utils:
     
     @staticmethod
     def calc_divisional_range(size, chuck=10) -> list:
+        """将指定大小分割成多个范围块。
+        
+        Args:
+            size: 总大小
+            chuck: 分割的块数，默认为10
+            
+        Returns:
+            list: 包含多个 [起始位置, 结束位置] 的列表
+            
+        Examples:
+            >>> Utils.calc_divisional_range(100, 4)
+            [[0, 24], [25, 49], [50, 74], [75, 99]]
+        """
         step = size//chuck
         arr = list(range(0, size, step))
         result = []
@@ -34,6 +65,21 @@ class Utils:
     
     @staticmethod
     def split_bytes_into_chunks(data, chunk_size=4096) -> list:
+        """将字节数据分割成固定大小的块。
+        
+        Args:
+            data: 要分割的字节数据
+            chunk_size: 每个块的大小，默认为4096字节
+            
+        Returns:
+            list: 包含分割后的数据块的列表
+            
+        Examples:
+            >>> data = b'hello world' * 1000
+            >>> chunks = Utils.split_bytes_into_chunks(data, 1000)
+            >>> len(chunks)
+            11
+        """
         chunks = []
         num_chunks = (len(data) + chunk_size - 1) // chunk_size
         for i in range(num_chunks):
@@ -45,14 +91,26 @@ class Utils:
     
     @staticmethod
     def safe_code(length:int) -> str:
+        """生成指定长度的随机安全码。
+        
+        使用字母和数字的组合生成随机字符串，可用于各种需要唯一标识符的场景。
+        
+        Args:
+            length: 要生成的安全码长度
+            
+        Returns:
+            str: 随机安全码
+            
+        Examples:
+            >>> Utils.safe_code(8)  # 返回类似 'a2Bc7dEf' 的8字符随机码
+        """
         return ''.join(choices(ascii_letters + digits, k=length))
+
 
 '''
 LsoPrococol:
-
 extension_length(struct, length=4) | extension(bytes) | meta_length(struct, length=4) | meta(bytes)
 '''
-
 
 class LsoProtocol:
     def __init__(self, local: Optional[str]=None, encoding:str='utf-8', buff: int = 2048):
@@ -525,33 +583,67 @@ class LsoProtocol:
             return self._set_length
 
 
+'''
+Mission Head (use LsoProtocol):
+extension: dict {type:mssion} | meta: dict
+
+Mission Data (use LsoProtocol):
+extension: str safe_code(6)   | meta: bytes
+'''
 
 class Pipe:
+    """数据传输管道，用于在不同端点之间传输数据。
+    
+    此类管理数据的发送和接收，支持任务队列和池，使用线程处理异步操作。
+    它是网络通信的核心组件，处理所有数据传输和消息分发。
+    """
+    
     def __init__(self, recv_function:Callable[[Optional[int]], bytes], send_function:Callable[[bytes], None]):
-        self.recv_function = recv_function
-        self.send_function = send_function
+        """初始化Pipe实例。
+        
+        Args:
+            recv_function: 接收数据的函数，接受一个可选的整数参数（读取的字节数）
+            send_function: 发送数据的函数，接受一个字节参数（要发送的数据）
+        """
+        self.recv_function = recv_function  # 接收数据的函数
+        self.send_function = send_function  # 发送数据的函数
+        # 任务头队列，优先发送
         self.mission_head = Queue()
-        self.send_pool: dict[str, Queue|Generator] = {}
-        self.recv_pool: dict[str, bytes] = {}
-        self.temp_pool: dict[str, dict] = {}
-        self.info: dict[str, dict] = {}
+        # 任务队列
+        self.send_pool: dict[str, Queue|Generator] = {}  # 存储待发送的数据
+        # 接收的数据
+        self.recv_pool: dict[str, bytes] = {}  # 存储接收到的完整数据
+        # 接收的数据的额外信息
+        self.recv_info: dict[str, dict] = {}  # 存储接收数据的元信息
+        # 临时，在接收完成后转移到 recv_info
+        self.temp_pool: dict[str, dict] = {}  # 临时存储接收中的数据
+        # 发送任务的额外信息
+        self.misson_info: dict[str, dict] = {}  # 存储发送任务的元信息
 
+        # 接收和发送线程
         self.recv_thread = Thread(target=self._recv_thread)
         self.send_thread = Thread(target=self._send_thread)
 
+        # 接收线程是否出错
         self.recv_exception = False
     
-    def recv(self) -> tuple[bytes, bytes]:
-        if not self.recv_pool: return
-        return self.recv_pool.popitem()
-    
     def _recv(self) -> tuple[LsoProtocol, dict]:
+        """接收一个完整的LSO协议数据包。
+        
+        Returns:
+            tuple: (LsoProtocol实例, 信息字典)
+        """
         lso = LsoProtocol().load_stream(self.recv_function)
-        print(lso)
         info = json.loads(lso.extension)
         return lso, info
     
     def _send(self, data:bytes, info:dict) -> None:
+        """发送数据和相关信息。
+        
+        Args:
+            data: 要发送的字节数据
+            info: 与数据相关的元信息
+        """
         lso = LsoProtocol(local=None, encoding='utf-8', buff=2048)
         lso.extension = json.dumps(info)
         lso.set_meta(data)
@@ -559,12 +651,25 @@ class Pipe:
             self.send_function(i)
     
     def create_mission(self, data:bytes, info:dict={}, extension:Optional[str]=None, buff:int=4096) -> str:
+        """创建一个发送任务。
+        
+        将大数据分块并加入发送队列，每块将被单独发送。
+        
+        Args:
+            data: 要发送的字节数据
+            info: 与数据相关的元信息
+            extension: 可选的扩展标识符，默认生成随机安全码
+            buff: 每块数据的大小，默认为4096字节
+            
+        Returns:
+            str: 任务的扩展标识符
+        """
         extension = extension or Utils.safe_code(6)
         queue = Queue()
         for i in Utils.split_bytes_into_chunks(data, buff):
             queue.put(i)
         self.send_pool[extension] = queue
-        self.info[extension] = {
+        self.misson_info[extension] = {
             'length': len(data)
         }
         # 保存任务到待发送队列
@@ -576,8 +681,13 @@ class Pipe:
         return extension
     
     def _send_thread(self):
+        """发送线程的主函数。
+        
+        持续监控任务队列并发送数据，处理任务头和任务数据。
+        """
         try:
             while True:
+                # 接收线程错误时，停止发送线程
                 if self.recv_exception:
                     self.recv_exception = False
                     self._send_error_handler('with_exception')
@@ -587,15 +697,15 @@ class Pipe:
                     while not self.mission_head.empty():
                         mission = self.mission_head.get()
                         self._send(json.dumps(mission), {
-                            'type': 'mission',
+                            'type': 'mission'
                         })
                         self.mission_head.task_done()
-                    info = self.info[extension]
+                    info = self.misson_info[extension]
                     # 发送任务数据
                     if queue.empty():
                         print(f'{extension} mission completed. size: {info["length"]}')
                         self.send_pool.pop(extension)
-                        self.info.pop(extension)
+                        self.misson_info.pop(extension)
                         continue
                     data = queue.get()
                     self._send(data, {
@@ -609,6 +719,10 @@ class Pipe:
             self._send_error_handler('error', e)
     
     def _recv_thread(self):
+        """接收线程的主函数。
+        
+        持续接收数据，处理任务头和任务数据，组装完整消息。
+        """
         try:
             while True:
                 lso, info = self._recv()
@@ -619,8 +733,8 @@ class Pipe:
                         'length': data['length'],
                         'recv': 0,
                         'data': bytearray(),
-                        'info': data['info'],
                     }
+                    self.recv_info[data['extension']] = data['info']
                     continue
                 # 接收任务数据
                 self.temp_pool[info['extension']]['data'] += lso.meta
@@ -640,6 +754,12 @@ class Pipe:
             self._recv_error_handler('error', e)
     
     def _send_error_handler(self, message:str, exception:Exception=None):
+        """处理发送过程中的错误。
+        
+        Args:
+            message: 错误消息类型
+            exception: 可选的异常对象
+        """
         if message == 'error':
             print(f'Pipe error: {exception}')
         if message == 'close':
@@ -648,11 +768,45 @@ class Pipe:
             print('Pipe closed with recv exception.')
 
     def _recv_error_handler(self, message:str, exception:Exception=None):
+        """处理接收过程中的错误。
+        
+        Args:
+            message: 错误消息类型
+            exception: 可选的异常对象
+        """
         if message == 'error':
             print(f'Pipe error: {exception}')
         if message == 'close':
             print('Pipe closed.')
-
+    
+    def send(self, data:bytes, info:dict={}):
+        """发送数据和相关信息。
+        
+        是create_mission的简化版本，用于快速发送数据。
+        
+        Args:
+            data: 要发送的字节数据
+            info: 与数据相关的元信息
+        """
+        self.create_mission(data, info)
+    
+    def recv(self) -> tuple[bytes, dict]:
+        """接收数据和相关信息。
+        
+        从接收池中获取一个完整的数据包。
+        """
+        if not self.recv_pool: return None
+        extension, data = self.recv_pool.popitem()
+        info = self.recv_info.pop(extension)
+        info.update({
+            'extension': extension
+        })
+        return data, info
+    
+    @property
+    def is_data(self) -> bool:
+        return self.recv_pool != {}
+    
     def start(self):
         self.recv_thread.start()
         self.send_thread.start()
