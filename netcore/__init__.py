@@ -5,7 +5,7 @@ from .event     import EventEmitter
 from .scheduler import Scheduler
 from .lso       import Pipe, LsoProtocol, Utils
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 __all__ = [
     'Endpoint',
