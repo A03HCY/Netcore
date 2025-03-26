@@ -21,9 +21,3 @@ __all__ = [
     'Utils',
     '__version__'
 ]
-
-# 配置日志
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger('netcore')

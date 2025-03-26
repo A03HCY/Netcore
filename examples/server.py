@@ -1,7 +1,6 @@
 from netcore import Endpoint, Pipe, Response, request
 from netcore.endpoint import logger
 import socket
-import logging
 
 
 # Create TCP server
@@ -23,6 +22,7 @@ def handle_message1():
 
 @endpoint.request('message2')
 def handle_message2():
+    print(request.message_id)
     # Another concurrent handler
     return Response('message2', {"status": "processed"})
 

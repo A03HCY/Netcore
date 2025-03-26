@@ -49,7 +49,7 @@ class RequestProxy:
     from anywhere in the code, while maintaining thread safety.
     """
     
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> Request:
         if not hasattr(_thread_local, 'request'):
             _thread_local.request = Request(b'')
         return getattr(_thread_local.request, name)
@@ -69,7 +69,7 @@ def set_request(req):
     _thread_local.request = req
 
 # 全局请求对象 - 现在是一个代理
-request = RequestProxy()
+request: Request = RequestProxy()
 
 class Response:
     """Response object for returning data to the client.
@@ -371,10 +371,9 @@ class Endpoint:
                 
             self.request_queue.task_done()
 
-    def _blocking_recv_save_data(self, data:bytes, info:dict):
+    def _blocking_recv_save_data(self, request:Request):
         """Save received data for blocking receive operations."""
-        message_id = info.get('message_id')
-        self.blocking_recv[message_id] = Request(data, info)
+        self.blocking_recv[request.message_id] = request
     
     def _blocking_recv(self, message_id:str):
         """Wait for and retrieve response data for blocking receive operations."""
