@@ -14,23 +14,24 @@ import logging
 logger = logging.getLogger("netcore.lso")
 
 class Utils:
-    """工具类，提供各种实用的静态方法。
+    """Utility class providing various static methods.
     
-    此类包含多种帮助函数，用于格式化数据、分割数据块、生成安全码等操作。
-    所有方法都是静态的，可以直接通过类名调用。
+    This class contains helper functions for formatting data, splitting data blocks,
+    generating secure codes, and other operations.
+    All methods are static and can be called directly through the class name.
     """
     
     @staticmethod
     def bytes_format(value:int, space:str=' ', point:int=2) -> str:
-        """将字节大小格式化为人类可读的字符串。
+        """Format byte size to human-readable string.
         
         Args:
-            value: 字节数量
-            space: 数字和单位之间的分隔符，默认为空格
-            point: 小数点后保留的位数，默认为2
+            value: Number of bytes
+            space: Separator between number and unit, default is space
+            point: Number of decimal places to keep, default is 2
             
         Returns:
-            str: 格式化后的字符串，如 "1.25 KB"
+            str: Formatted string, such as "1.25 KB"
             
         Examples:
             >>> Utils.bytes_format(1500)
@@ -45,14 +46,14 @@ class Utils:
     
     @staticmethod
     def calc_divisional_range(size, chuck=10) -> list:
-        """将指定大小分割成多个范围块。
+        """Split a given size into multiple range blocks.
         
         Args:
-            size: 总大小
-            chuck: 分割的块数，默认为10
+            size: Total size
+            chuck: Number of blocks to split into, default is 10
             
         Returns:
-            list: 包含多个 [起始位置, 结束位置] 的列表
+            list: List containing multiple [start_pos, end_pos] ranges
             
         Examples:
             >>> Utils.calc_divisional_range(100, 4)
@@ -69,14 +70,14 @@ class Utils:
     
     @staticmethod
     def split_bytes_into_chunks(data, chunk_size=4096) -> list:
-        """将字节数据分割成固定大小的块。
+        """Split byte data into fixed-size chunks.
         
         Args:
-            data: 要分割的字节数据
-            chunk_size: 每个块的大小，默认为4096字节
+            data: Byte data to split
+            chunk_size: Size of each chunk, default is 4096 bytes
             
         Returns:
-            list: 包含分割后的数据块的列表
+            list: List containing split data chunks
             
         Examples:
             >>> data = b'hello world' * 1000
@@ -95,18 +96,19 @@ class Utils:
     
     @staticmethod
     def safe_code(length:int) -> str:
-        """生成指定长度的随机安全码。
+        """Generate a random secure code of specified length.
         
-        使用字母和数字的组合生成随机字符串，可用于各种需要唯一标识符的场景。
+        Uses a combination of letters and digits to generate a random string,
+        useful for various scenarios requiring unique identifiers.
         
         Args:
-            length: 要生成的安全码长度
+            length: Length of the secure code to generate
             
         Returns:
-            str: 随机安全码
+            str: Random secure code
             
         Examples:
-            >>> Utils.safe_code(8)  # 返回类似 'a2Bc7dEf' 的8字符随机码
+            >>> Utils.safe_code(8)  # Returns an 8-character random code like 'a2Bc7dEf'
         """
         return ''.join(choices(ascii_letters + digits, k=length))
 
@@ -117,14 +119,19 @@ extension_length(struct, length=4) | extension(bytes) | meta_length(struct, leng
 '''
 
 class LsoProtocol:
+    """Protocol class for lightweight structured object serialization and deserialization.
+    
+    Provides methods for handling binary data with extension metadata, useful for
+    network communication and file operations.
+    """
+    
     def __init__(self, local: Optional[str]=None, encoding:str='utf-8', buff: int = 2048):
-        """
-        初始化 LsoProtocol 实例。
+        """Initialize an LsoProtocol instance.
 
         Args:
-            local (Optional[str]): 本地文件路径，若为 None 则不使用本地存储。
-            encoding (str): 字符编码，默认为 'utf-8'。
-            buff (int): 缓冲区大小，默认为 2048 字节。
+            local: Optional local file path, if None local storage is not used
+            encoding: Character encoding, default is 'utf-8'
+            buff: Buffer size, default is 2048 bytes
         """
         self._meta = bytearray()
         self.encoding = encoding
@@ -144,11 +151,10 @@ class LsoProtocol:
     
     @property
     def length(self) -> int:
-        """
-        获取当前存储的元数据长度。
+        """Get the length of currently stored metadata.
 
         Returns:
-            int: 元数据的字节长度。
+            int: Length of metadata in bytes
         """
         if self.local:
             return path.getsize(self.local) - len(self._extension) - 8
@@ -167,11 +173,10 @@ class LsoProtocol:
     
     @property
     def extension(self) -> str|bytes:
-        """
-        获取当前扩展名。
+        """Get the current extension.
 
         Returns:
-            str: 扩展名的字符串。
+            str|bytes: The extension as string or bytes
         """
         if isinstance(self._extension, bytes):
             return self._extension.decode(encoding=self.encoding)
@@ -179,30 +184,29 @@ class LsoProtocol:
     
     @extension.setter
     def extension(self, value: Union[bytes, str]) -> None:
-        """
-        设置对象的扩展名属性。
+        """Set the object's extension attribute.
 
-        此方法用于更新对象的扩展名，支持字节和字符串类型的输入。
-        如果输入值是字节类型，则直接赋值给内部变量；
-        如果是字符串类型，则使用对象的编码方式将其转换为字节后赋值；
-        对于其他类型，尝试将其转换为字节，转换失败则抛出 ValueError 异常。
+        This method updates the object's extension, supporting both byte and string inputs.
+        If the input is bytes, it's directly assigned to the internal variable;
+        If it's a string, it's converted to bytes using the object's encoding;
+        For other types, it tries to convert to bytes, raising a ValueError if conversion fails.
 
-        若对象处于本地模式，还会进行一系列操作：
-        1. 验证本地文件并重新创建（如果必要）。
-        2. 使用内存映射（mmap）来更新本地文件中的扩展名部分。
-            - 计算新旧扩展名的长度差异。
-            - 根据差异调整内存映射的大小，并移动数据以腾出空间或填补空缺。
-            - 写入新的扩展名长度和扩展名数据。
-            - 刷新内存映射并关闭。
+        When the object is in local mode, it also performs a series of operations:
+        1. Verifies the local file and recreates it if necessary.
+        2. Uses memory mapping (mmap) to update the extension part in the local file.
+           - Calculates the length difference between new and old extensions.
+           - Adjusts the memory map size and moves data to make space or fill gaps.
+           - Writes the new extension length and extension data.
+           - Flushes and closes the memory map.
 
-        如果在更新过程中发生任何异常，将抛出一个包含错误信息的 Exception 异常。
+        If any exception occurs during the update, an Exception with an error message is raised.
 
         Args:
-            value (Union[bytes, str]): 新的扩展名，可以是字节或字符串。
+            value: New extension, can be bytes or string
 
         Raises:
-            ValueError: 如果值的类型不是 'bytes' 或 'str'。
-            Exception: 如果在更新扩展名过程中发生错误。
+            ValueError: If the value type is not 'bytes' or 'str'
+            Exception: If an error occurs during extension update
         """
         if isinstance(value, bytes):
             self._extension = value
@@ -239,11 +243,10 @@ class LsoProtocol:
     
     @property
     def head(self) -> bytes:
-        """
-        生成并返回数据头部。
+        """Generate and return the data header.
 
         Returns:
-            bytes: 包含扩展名和元数据长度的字节序列。
+            bytes: Byte sequence containing extension and metadata length
         """
         # code self._extension
         head = self._extension
@@ -254,17 +257,16 @@ class LsoProtocol:
 
     @staticmethod
     def verify(local:str, recreate:bool=False) -> bool:
-        """
-        验证本地文件头部信息的有效性。
+        """Verify the validity of local file header information.
         
-        不对长度是否符合头部信息进行验证。
+        Does not verify if the length matches the header information.
 
         Args:
-            local (str): 文件路径。
-            recreate (bool): 如果文件无效，是否重新创建文件。
+            local: File path
+            recreate: If the file is invalid, whether to recreate it
 
         Returns:
-            bool: 如果文件有效返回 True，否则返回 False。
+            bool: True if the file is valid, otherwise False
         """
         if not path.exists(local):
             if recreate: LsoProtocol.create_empty_file(local, '')
@@ -283,22 +285,22 @@ class LsoProtocol:
     
     @staticmethod
     def check_complete(local:str) -> Tuple[bool, int]:
-        """
-        检查指定文件中是否缺失元数据，并返回缺失情况。
+        """Check if metadata is missing in the specified file and return the missing status.
 
-        验证文件的有效性，如果文件无效则抛出 FileExistsError。
-        读取文件中的扩展名和元数据长度，并计算实际数据大小与元数据长度之间的差异。
+        Verifies the validity of the file, raises FileNotFoundError if invalid.
+        Reads the extension and metadata length from the file and calculates the difference
+        between actual data size and metadata length.
 
         Args:
-            local (str): 要检查的文件路径。
+            local: Path of the file to check
 
         Returns:
             Tuple[bool, int]: 
-                - bool: 如果缺失的大小为 0，返回 True；否则返回 False。
-                - int: 缺失的字节数。
+                - bool: True if the missing size is 0, otherwise False
+                - int: Number of missing bytes
         
         Raises:
-            FileNotFoundError: 如果文件无效。
+            FileNotFoundError: If the file is invalid
         """
         if not LsoProtocol.verify(local): raise FileNotFoundError()
         with open(local, 'rb') as f:
@@ -312,13 +314,12 @@ class LsoProtocol:
     
     @staticmethod
     def create_empty_file(local:str, extension:Union[str, bytes], encoding:str='utf-8') -> None:
-        """
-        创建一个空文件并写入扩展名和元数据长度。
+        """Create an empty file and write extension and metadata length.
 
         Args:
-            local (str): 文件路径。
-            extension (Union[str, bytes]): 扩展名，可以是字符串或字节。
-            encoding (str): 编码格式，默认为 'utf-8'。
+            local: File path
+            extension: Extension, can be string or bytes
+            encoding: Encoding format, default is 'utf-8'
         """
         if isinstance(extension, str): extension = extension.encode(encoding=encoding)
         with open(local, 'wb') as f:
@@ -334,17 +335,16 @@ class LsoProtocol:
             handler: Optional[Union[Callable[[bytes], None], list[Callable[[bytes], None]]]] = None,                  # Handle function
             buff: int = 2048                                              # Buff length
         ) -> bytes:
-        """
-        从函数中接收指定长度的数据。
+        """Receive data of specified length from a function.
 
         Args:
-            function (Callable): 数据接收函数。
-            length (int): 期望接收的数据长度。
-            handler (Optional[Callable]): 可选的数据处理函数。
-            buff (int): 每次读取的字节数。
+            function: Data receive function
+            length: Expected data length
+            handler: Optional data handler function
+            buff: Number of bytes to read each time
 
         Returns:
-            bytes: 接收到的字节数据。
+            bytes: Received byte data
         """
         meta = b''
         temp = b''
@@ -364,11 +364,10 @@ class LsoProtocol:
         return temp
     
     def _add_meta(self, data:bytes) -> None:
-        """
-        将元数据添加到本地文件或内存中。
+        """Add metadata to local file or memory.
 
         Args:
-            data (bytes): 要添加的字节数据。
+            data: Byte data to add
         """
         if self.local:
             with open(self.local, 'a+b') as f: f.write(data)
@@ -376,11 +375,10 @@ class LsoProtocol:
             self._meta.extend(data)
     
     def _set_length(self, meta_length:int) -> None:
-        """
-        更新本地文件中的元数据长度。
+        """Update metadata length in local file.
 
         Args:
-            meta_length (int): 新的元数据长度。
+            meta_length: New metadata length
         """
         if not self.local: return
         self.extension = self._extension
@@ -391,14 +389,13 @@ class LsoProtocol:
             mm.flush()
     
     def set_meta(self, data:Union[bytes, bytearray, str]) -> None:
-        """
-        设置元数据。
+        """Set metadata.
 
         Args:
-            data (Union[bytes, bytearray, str]): 要设置的元数据，可以是字节、字节数组或字符串。
+            data: Metadata to set, can be bytes, bytearray, or string
 
         Raises:
-            ValueError: 如果数据类型不正确。
+            ValueError: If data type is incorrect
         """
         if   isinstance(data, bytes): data = bytearray(data)
         elif isinstance(data, bytearray): pass
@@ -416,14 +413,13 @@ class LsoProtocol:
             mm.write(data)
 
     def full_data(self, buff:Optional[int] = None) -> Generator:
-        """
-        生成器，逐块返回完整数据。
+        """Generator that returns complete data in chunks.
 
         Args:
-            buff (Optional[int]): 每次读取的字节数，默认为实例的 buff 属性。
+            buff: Number of bytes to read each time, defaults to instance's buff attribute
 
         Yields:
-            bytes: 返回读取的数据块。
+            bytes: Returns the read data chunk
         """
         if not buff: buff = self.buff
         # 如果有本地文件，读取文件内容
@@ -448,23 +444,25 @@ class LsoProtocol:
         handler: Optional[Callable[[bytes], None]] = None,
         buff: Optional[int] = None
     ) -> 'LsoProtocol':
-        """
-        从流中加载数据。
+        """Load data from a stream.
     
         Args:
-            function (Callable): 数据接收函数，用于从流中读取数据。
-            head (Optional[Union[bytes, bytearray]]): 可选的头部数据，如果提供则从头部获取扩展名和元数据长度。
-            handler (Optional[Callable]): 可选的数据处理函数，用于处理接收到的数据。
-            buff (Optional[int]): 每次读取的字节数，默认为实例的 buff 属性。
+            function: Data receive function, used to read data from the stream
+            head: Optional head data, if provided extension and metadata length are obtained from it
+            handler: Optional data handler function, used to process received data
+            buff: Number of bytes to read each time, defaults to instance's buff attribute
     
         Returns:
-            self: 当前实例，以便支持链式调用。
+            self: Current instance, to support chain calling
         
         Notes:
-            - 如果提供了头部数据，则从头部解析扩展名和元数据长度，并将头部数据添加到元数据中。
-            - 如果未提供头部数据，则从流中接收头部信息，解析扩展名和元数据长度。
-            - 接收所有元数据，并将其添加到实例的元数据中。
-            - 如果实例有本地文件路径，则清空该文件；否则，重置实例的元数据。
+            - If head data is provided, extension and metadata length are parsed from it,
+              and the head data is added to metadata.
+            - If head data is not provided, head information is received from the stream,
+              and extension and metadata length are parsed.
+            - All metadata is received and added to the instance's metadata.
+            - If the instance has a local file path, that file is emptied; otherwise,
+              the instance's metadata is reset.
         """
         if not buff: 
             buff = self.buff
@@ -502,23 +500,22 @@ class LsoProtocol:
         return self
     
     def load_generator(self, generator: Generator, extention:Optional[str]=None, handler:Optional[Callable[[bytes], None]]=None, set_length:bool=True) -> 'LsoProtocol':
-        """
-	    从数据生成器加载数据并设置扩展名。
+        """Load data from a data generator and set extension.
         
-	    Args:
-	        generator (Generator): 数据生成器，生成要加载的数据块。
-	        extension (Optional[str]): 可选的扩展名，如果提供，将设置为当前实例的扩展名。
-	        handler (Optional[Callable]): 可选的数据处理函数，在每次接收数据时调用。
-	        set_length (bool): 是否在加载完成后更新元数据长度，默认为 True。
+        Args:
+            generator: Data generator that produces data chunks to load
+            extension: Optional extension, if provided it will be set as the current instance's extension
+            handler: Optional data handler function, called each time data is received
+            set_length: Whether to update metadata length after loading is complete, default is True
             
-	    Returns:
-	        self: 当前实例，便于链式调用。
+        Returns:
+            self: Current instance, for chain calling
             
-	    Notes:
-	        - 如果实例使用本地文件存储，将首先清空文件内容。
-	        - 在加载数据时，所有接收到的数据将被添加到元数据中。
-	        - 如果提供了扩展名，将在加载数据之前设置它。
-	        - 每次接收数据时，如果提供了处理函数，将会被调用。
+        Notes:
+            - If the instance uses local file storage, the file content will be cleared first.
+            - During data loading, all received data will be added to metadata.
+            - If an extension is provided, it will be set before loading data.
+            - Each time data is received, if a handler function is provided, it will be called.
         """
         # 清空文件
         if self.local:
@@ -539,10 +536,10 @@ class LsoProtocol:
         return self
     
     def release_headinfo(self) -> None:
-        """
-        释放头部信息，如果文件存在并有效，则调整文件内容。
+        """Release header information, if file exists and is valid, adjust file content.
 
-        如果本地文件存在且有效，移除文件头部信息，并更新文件大小。
+        If the local file exists and is valid, removes the file header information
+        and updates the file size.
 
         Returns:
             None
@@ -558,11 +555,10 @@ class LsoProtocol:
         self.local = None
     
     def save(self, path:str):
-        """
-        将数据保存到指定路径。
+        """Save data to the specified path.
 
         Args:
-            path (str): 保存文件的路径。
+            path: Path to save the file
         """
         if self.local: return
         with open(path, 'wb') as f:
@@ -571,17 +567,17 @@ class LsoProtocol:
         self.local = path
     
     def reveal_private(self, function_name:str) -> Callable:
-        """
-        根据给定的函数名揭示对应的私有方法。
+        """Reveal a private method based on the given function name.
     
         Args:
-            function_name (str): 要揭示的私有方法的名称。
+            function_name: Name of the private method to reveal
     
         Returns:
-            Callable: 对应的私有方法。
+            Callable: The corresponding private method
     
         Notes:
-            此方法用于在特定情况下访问类的私有方法，通常不建议在类的外部使用。
+            This method is used to access the class's private methods in specific cases,
+            generally not recommended for use outside the class.
         """
         if function_name == 'set_length':
             return self._set_length
@@ -596,18 +592,19 @@ extension: str safe_code(6)   | meta: bytes
 '''
 
 class Pipe:
-    """数据传输管道，用于在不同端点之间传输数据。
+    """Data transmission pipe for transferring data between different endpoints.
     
-    此类管理数据的发送和接收，支持任务队列和池，使用线程处理异步操作。
-    它是网络通信的核心组件，处理所有数据传输和消息分发。
+    This class manages the sending and receiving of data, supports task queues and pools,
+    and uses threads to handle asynchronous operations.
+    It is the core component of network communication, handling all data transfer and message distribution.
     """
     
     def __init__(self, recv_function:Callable[[Optional[int]], bytes], send_function:Callable[[bytes], None]):
-        """初始化Pipe实例。
+        """Initialize a Pipe instance.
         
         Args:
-            recv_function: 接收数据的函数，接受一个可选的整数参数（读取的字节数）
-            send_function: 发送数据的函数，接受一个字节参数（要发送的数据）
+            recv_function: Function to receive data, accepts an optional integer parameter (number of bytes to read)
+            send_function: Function to send data, accepts a bytes parameter (data to send)
         """
         self.recv_function = recv_function  # 接收数据的函数
         self.send_function = send_function  # 发送数据的函数
@@ -634,23 +631,25 @@ class Pipe:
 
         # 接收线程是否出错
         self.recv_exception = False
+
+        self.final_error_handler: Callable = None
     
     def _recv(self) -> tuple[LsoProtocol, dict]:
-        """接收一个完整的LSO协议数据包。
+        """Receive a complete LSO protocol data packet.
         
         Returns:
-            tuple: (LsoProtocol实例, 信息字典)
+            tuple: (LsoProtocol instance, information dictionary)
         """
         lso = LsoProtocol().load_stream(self.recv_function)
         info = json.loads(lso.extension)
         return lso, info
     
     def _send(self, data:bytes, info:dict) -> None:
-        """发送数据和相关信息。
+        """Send data and related information.
         
         Args:
-            data: 要发送的字节数据
-            info: 与数据相关的元信息
+            data: Byte data to send
+            info: Metadata related to the data
         """
         lso = LsoProtocol(local=None, encoding='utf-8', buff=2048)
         lso.extension = json.dumps(info)
@@ -659,18 +658,18 @@ class Pipe:
             self.send_function(i)
     
     def create_mission(self, data:bytes, info:dict={}, extension:Optional[str]=None, buff:int=4096) -> str:
-        """创建一个发送任务。
+        """Create a send mission.
         
-        将大数据分块并加入发送队列，每块将被单独发送。
+        Split large data into chunks and add to the send queue, each chunk will be sent separately.
         
         Args:
-            data: 要发送的字节数据
-            info: 与数据相关的元信息
-            extension: 可选的扩展标识符，默认生成随机安全码
-            buff: 每块数据的大小，默认为4096字节
+            data: Byte data to send
+            info: Metadata related to the data
+            extension: Optional extension identifier, defaults to a random secure code
+            buff: Size of each data chunk, default is 4096 bytes
             
         Returns:
-            str: 任务的扩展标识符
+            str: The mission's extension identifier
         """
         with self.send_lock:  # 添加锁保护
             extension = extension or Utils.safe_code(6)
@@ -690,9 +689,9 @@ class Pipe:
             return extension
     
     def _send_thread(self):
-        """发送线程的主函数。
+        """Main function of the send thread.
         
-        持续监控任务队列并发送数据，处理任务头和任务数据。
+        Continuously monitors the task queue and sends data, handling task headers and task data.
         """
         try:
             while True:
@@ -700,6 +699,7 @@ class Pipe:
                 if self.recv_exception:
                     self.recv_exception = False
                     self._send_error_handler('with_exception')
+                    break
                 
                 with self.send_lock:  # 添加锁保护
                     send_pool_copy = list(self.send_pool.items())
@@ -736,9 +736,9 @@ class Pipe:
             self._send_error_handler('error', e)
     
     def _recv_thread(self):
-        """接收线程的主函数。
+        """Main function of the receive thread.
         
-        持续接收数据，处理任务头和任务数据，组装完整消息。
+        Continuously receives data, handles task headers and task data, assembles complete messages.
         """
         try:
             while True:
@@ -776,11 +776,11 @@ class Pipe:
             self._recv_error_handler('error', e)
     
     def _send_error_handler(self, message:str, exception:Exception=None):
-        """处理发送过程中的错误。
+        """Handle errors during sending.
         
         Args:
-            message: 错误消息类型
-            exception: 可选的异常对象
+            message: Error message type
+            exception: Optional exception object
         """
         if message == 'error':
             logger.error(f'Pipe error: {exception}')
@@ -788,13 +788,19 @@ class Pipe:
             logger.info('Pipe closed.')
         if message == 'with_exception':
             logger.warning('Pipe closed with recv exception.')
+        if self.final_error_handler:
+            try:
+                logger.info('Final error handler is running.')
+                self.final_error_handler()
+            except Exception as e:
+                logger.error(f'Final error handler occurred error: {e}')
 
     def _recv_error_handler(self, message:str, exception:Exception=None):
-        """处理接收过程中的错误。
+        """Handle errors during receiving.
         
         Args:
-            message: 错误消息类型
-            exception: 可选的异常对象
+            message: Error message type
+            exception: Optional exception object
         """
         if message == 'error':
             logger.error(f'Pipe error: {exception}')
@@ -802,20 +808,23 @@ class Pipe:
             logger.info('Pipe closed.')
     
     def send(self, data:bytes, info:dict={}):
-        """发送数据和相关信息。
+        """Send data and related information.
         
-        是create_mission的简化版本，用于快速发送数据。
+        Simplified version of create_mission, for quick data sending.
         
         Args:
-            data: 要发送的字节数据
-            info: 与数据相关的元信息
+            data: Byte data to send
+            info: Metadata related to the data
         """
         self.create_mission(data, info)
     
     def recv(self) -> tuple[bytes, dict]:
-        """接收数据和相关信息。
+        """Receive data and related information.
         
-        从接收池中获取一个完整的数据包。
+        Get a complete data packet from the receive pool.
+        
+        Returns:
+            tuple: (data bytes, info dictionary)
         """
         with self.recv_lock:  # 添加锁保护
             if not self.recv_pool: 
@@ -829,9 +838,15 @@ class Pipe:
     
     @property
     def is_data(self) -> bool:
+        """Check if there is data available to receive.
+        
+        Returns:
+            bool: True if there is data, False otherwise
+        """
         with self.recv_lock:  # 添加锁保护
             return bool(self.recv_pool)
     
     def start(self):
+        """Start the pipe's send and receive threads."""
         self.recv_thread.start()
         self.send_thread.start()

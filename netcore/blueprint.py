@@ -7,18 +7,20 @@ import functools
 logger = logging.getLogger("netcore.blueprint")
 
 class Blueprint:
-    """蓝图类，用于组织路由和处理函数
+    """Blueprint class, used to organize routes and handler functions.
     
-    蓝图可以定义一组路由和相应的处理函数，并在注册到Endpoint时添加前缀。
-    这样可以更好地组织大型应用的代码，将相关功能分组。
+    A blueprint can define a group of routes and corresponding handlers, 
+    and add a prefix when registered to an Endpoint.
+    This allows better organization of code in large applications by 
+    grouping related functionality.
     """
     
     def __init__(self, name: str, prefix: str = ""):
-        """创建蓝图
+        """Create a blueprint.
         
         Args:
-            name: 蓝图名称，用于标识和日志
-            prefix: 路由前缀，会添加到所有路由前面
+            name: Blueprint name, used for identification and logging
+            prefix: Route prefix, will be added to all routes
         """
         self.name = name
         self.prefix = prefix
@@ -27,18 +29,18 @@ class Blueprint:
         self.error_handler = None  # 蓝图错误处理器
         self.before_request_funcs: List[Callable] = []  # 请求前钩子
         self.after_request_funcs: List[Callable] = []  # 请求后钩子
-        logger.info(f"创建蓝图 '{name}' 前缀为 '{prefix}'")
+        logger.info(f"Created blueprint '{name}' with prefix '{prefix}'")
     
     def request(self, route: str):
-        """路由装饰器，用于注册处理不同路由的函数
+        """Route decorator, used to register functions for handling different routes.
         
-        与Endpoint.request保持一致的命名和使用方式
+        Maintains consistent naming and usage pattern with Endpoint.request
         
         Args:
-            route: 不包含前缀的路由路径
+            route: Route path without prefix
             
         Returns:
-            装饰器函数
+            Decorator function
         """
         def decorator(func):
             @functools.wraps(func)
@@ -73,59 +75,59 @@ class Blueprint:
             
             full_route = f"{self.prefix}{route}"
             self.routes[full_route] = wrapper
-            logger.debug(f"蓝图 '{self.name}' 注册路由 '{full_route}'")
+            logger.debug(f"Blueprint '{self.name}' registered route '{full_route}'")
             return func
         return decorator 
 
     def middleware(self, func):
-        """中间件装饰器
+        """Middleware decorator.
         
         Args:
-            func: 中间件函数，接收handler作为参数，返回新的handler
+            func: Middleware function that accepts a handler as parameter and returns a new handler
         """
         self.middlewares.append(func)
-        logger.debug(f"蓝图 '{self.name}' 添加中间件 '{func.__name__}'")
+        logger.debug(f"Blueprint '{self.name}' added middleware '{func.__name__}'")
         return func
     
     def error_handle(self, func):
-        """错误处理装饰器
+        """Error handler decorator.
         
         Args:
-            func: 错误处理函数，接收异常作为参数
+            func: Error handling function that accepts an exception as parameter
         """
         self.error_handler = func
-        logger.debug(f"蓝图 '{self.name}' 设置错误处理器 '{func.__name__}'")
+        logger.debug(f"Blueprint '{self.name}' set error handler '{func.__name__}'")
         return func
     
     def before_request(self, func):
-        """请求前钩子装饰器
+        """Before request hook decorator.
         
         Args:
-            func: 在请求处理前执行的函数
+            func: Function to execute before request processing
         """
         self.before_request_funcs.append(func)
-        logger.debug(f"蓝图 '{self.name}' 添加请求前钩子 '{func.__name__}'")
+        logger.debug(f"Blueprint '{self.name}' added before request hook '{func.__name__}'")
         return func
     
     def after_request(self, func):
-        """请求后钩子装饰器
+        """After request hook decorator.
         
         Args:
-            func: 在请求处理后执行的函数，接收响应对象作为参数
+            func: Function to execute after request processing, receives response object as parameter
         """
         self.after_request_funcs.append(func)
-        logger.debug(f"蓝图 '{self.name}' 添加请求后钩子 '{func.__name__}'")
+        logger.debug(f"Blueprint '{self.name}' added after request hook '{func.__name__}'")
         return func
     
     def default(self, func):
-        """注册默认处理器
+        """Register default handler.
         
-        为保持与Endpoint风格一致
+        Maintains consistency with Endpoint style
         
         Args:
-            func: 默认处理函数
+            func: Default handler function
         """
         full_route = f"{self.prefix}/__default__"
         self.routes[full_route] = func
-        logger.debug(f"蓝图 '{self.name}' 设置默认处理器 '{func.__name__}'")
+        logger.debug(f"Blueprint '{self.name}' set default handler '{func.__name__}'")
         return func 

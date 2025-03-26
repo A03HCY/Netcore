@@ -9,7 +9,11 @@ import heapq
 logger = logging.getLogger("netcore.scheduler")
 
 class Scheduler:
-    """定时任务调度器"""
+    """Task scheduler for timed task execution.
+    
+    Manages scheduled tasks with support for one-time delayed execution
+    and periodic recurring tasks.
+    """
     
     def __init__(self):
         self._tasks = []  # 优先队列
@@ -18,7 +22,11 @@ class Scheduler:
         self._lock = threading.Lock()
     
     def _run(self):
-        """运行调度器主循环"""
+        """Run the scheduler main loop.
+        
+        Continuously checks for tasks that need to be executed based on their
+        scheduled time and handles recurring tasks.
+        """
         while self._running:
             with self._lock:
                 now = datetime.now()
@@ -30,12 +38,16 @@ class Scheduler:
                             next_time = now + timedelta(seconds=interval)
                             heapq.heappush(self._tasks, (next_time, task, interval))
                     except Exception as e:
-                        logger.error(f"执行定时任务出错: {e}")
+                        logger.error(f"Error executing scheduled task: {e}")
             
             time.sleep(0.1)  # 避免过度占用CPU
     
     def start(self):
-        """启动调度器"""
+        """Start the scheduler.
+        
+        Begins the scheduler thread if it's not already running.
+        Returns immediately without waiting for task execution.
+        """
         if self._running:
             return
         self._running = True
@@ -44,18 +56,24 @@ class Scheduler:
         self._thread.start()
     
     def stop(self):
-        """停止调度器"""
+        """Stop the scheduler.
+        
+        Stops task execution and waits for the scheduler thread to terminate.
+        """
         self._running = False
         if self._thread:
             self._thread.join()
     
     def schedule(self, task: Callable, delay: float = 0, interval: Optional[float] = None):
-        """调度任务
+        """Schedule a task for execution.
         
         Args:
-            task: 要执行的任务函数
-            delay: 延迟执行的秒数
-            interval: 如果指定，任务将每隔interval秒执行一次
+            task: Function to execute
+            delay: Initial delay in seconds before first execution
+            interval: If specified, the task will repeat every interval seconds
+        
+        The task will be executed after the specified delay. If an interval
+        is provided, the task will continue to run periodically.
         """
         with self._lock:
             next_time = datetime.now() + timedelta(seconds=delay)

@@ -19,6 +19,12 @@ _thread_local = threading.local()
 
 # 请求类
 class Request:
+    """Request object class for accessing request information.
+    
+    Encapsulates the request data and provides convenient access to
+    different formats of the request data.
+    """
+    
     def __init__(self, meta: bytes = None, info: dict = None):
         self.meta = meta if isinstance(meta, bytes) else bytes(meta)
         self.json = None
@@ -37,7 +43,11 @@ class Request:
 
 # 请求代理类 - 类似Flask的实现
 class RequestProxy:
-    """请求代理对象，自动从线程本地存储获取当前请求"""
+    """Request proxy object, automatically retrieves the current request from thread-local storage.
+    
+    Similar to Flask's implementation, allows accessing the current request
+    from anywhere in the code, while maintaining thread safety.
+    """
     
     def __getattr__(self, name):
         if not hasattr(_thread_local, 'request'):
@@ -51,24 +61,39 @@ class RequestProxy:
 
 # 设置当前线程的请求对象
 def set_request(req):
+    """Set the request object for the current thread.
+    
+    Args:
+        req: The Request object to set as the current thread's request
+    """
     _thread_local.request = req
 
 # 全局请求对象 - 现在是一个代理
 request = RequestProxy()
 
 class Response:
+    """Response object for returning data to the client.
+    
+    Encapsulates the response data and provides methods to convert
+    the response to the appropriate format.
+    """
+    
     def __init__(self, route: str, data: Any) -> None:
-        """创建响应对象
+        """Create a response object.
         
         Args:
-            route: 响应的路由
-            data: 响应的数据
+            route: The response route
+            data: The response data
         """
         self.route = route
         self.data = data
     
     def to_bytes(self) -> bytes:
-        """将响应数据转换为字节"""
+        """Convert response data to bytes format.
+        
+        Returns:
+            bytes: The response data in bytes format
+        """
         if isinstance(self.data, dict):
             return json.dumps(self.data).encode('utf-8')
         elif isinstance(self.data, str):
@@ -81,14 +106,21 @@ class Response:
             return str(self.data).encode('utf-8')
 
 class Endpoint:
-    def __init__(self, pipe: Pipe, max_workers: int = 4):
-        """创建端点
+    """Endpoint class for handling network communication.
+    
+    Manages routes, middleware, hooks, and communicates through the provided pipe.
+    Supports multithreaded request handling for increased performance.
+    """
+    
+    def __init__(self, pipe: Pipe, max_workers: int = 1):
+        """Create an endpoint.
         
         Args:
-            pipe: 用于通信的管道
-            max_workers: 工作线程数量，默认为4
+            pipe: Communication pipe
+            max_workers: Number of worker threads, defaults to 1
         """
         self.pipe = pipe
+        self.pipe.final_error_handler = self.stop
         self.routes: Dict[str, Callable] = {}
         self.running = False
         self.handler_thread = None
@@ -114,10 +146,13 @@ class Endpoint:
         self.lock = threading.RLock()  # 可重入锁
     
     def request(self, route: str):
-        """路由装饰器，用于注册处理不同路由的函数
+        """Route decorator for registering functions to handle different routes.
         
         Args:
-            route: 请求的路由名称
+            route: The route path to handle
+            
+        Returns:
+            A decorator function
         """
         def decorator(func):
             @functools.wraps(func)
@@ -158,56 +193,71 @@ class Endpoint:
         return decorator
     
     def default(self, func):
-        """注册默认消息处理器，用于处理没有指定路由的消息
+        """Register a default message handler for messages without a specific route.
         
         Args:
-            func: 处理函数
+            func: The handler function
+            
+        Returns:
+            The original function for chaining
         """
         self.default_handler = func
         return func
     
     def middleware(self, func):
-        """中间件装饰器
+        """Middleware decorator.
         
         Args:
-            func: 中间件函数，接收handler作为参数，返回新的handler
+            func: Middleware function that takes a handler and returns a new handler
+            
+        Returns:
+            The original function for chaining
         """
         self.middlewares.append(func)
-        logger.debug(f"端点添加中间件 '{func.__name__}'")
+        logger.debug(f"Endpoint added middleware '{func.__name__}'")
         return func
     
     def error_handle(self, func):
-        """错误处理装饰器
+        """Error handler decorator.
         
         Args:
-            func: 错误处理函数，接收异常作为参数
+            func: Error handling function that takes an exception as parameter
+            
+        Returns:
+            The original function for chaining
         """
         self.error_handler = func
-        logger.debug(f"端点设置错误处理器 '{func.__name__}'")
+        logger.debug(f"Endpoint set error handler '{func.__name__}'")
         return func
     
     def before_request(self, func):
-        """请求前钩子装饰器
+        """Before request hook decorator.
         
         Args:
-            func: 在请求处理前执行的函数
+            func: Function to execute before request processing
+            
+        Returns:
+            The original function for chaining
         """
         self.before_request_funcs.append(func)
-        logger.debug(f"端点添加请求前钩子 '{func.__name__}'")
+        logger.debug(f"Endpoint added before request hook '{func.__name__}'")
         return func
     
     def after_request(self, func):
-        """请求后钩子装饰器
+        """After request hook decorator.
         
         Args:
-            func: 在请求处理后执行的函数，接收响应对象作为参数
+            func: Function to execute after request processing, receives response as parameter
+            
+        Returns:
+            The original function for chaining
         """
         self.after_request_funcs.append(func)
-        logger.debug(f"端点添加请求后钩子 '{func.__name__}'")
+        logger.debug(f"Endpoint added after request hook '{func.__name__}'")
         return func
     
     def _handle_requests(self):
-        """处理接收到的请求"""
+        """Handle incoming requests by distributing them to worker threads."""
         global request
         
         worker_threads = []
@@ -221,15 +271,15 @@ class Endpoint:
         while self.running:
             if not self.pipe.is_data:
                 if self.pipe.recv_exception:
-                    logger.error(f"管道接收异常: {self.pipe.recv_exception}")
-                    logger.info("端点停止")
+                    logger.error(f"Pipe receive exception: {self.pipe.recv_exception}")
+                    logger.info("Endpoint stopped")
                     self.event.emit('recv_exception')
                     self.stop()
                 continue
                 
             data, info = self.pipe.recv()
             if not data or not info:
-                continue
+                break
             
             # 将请求放入队列，由工作线程处理
             self.request_queue.put((data, info))
@@ -241,7 +291,7 @@ class Endpoint:
             thread.join()
     
     def _worker_thread(self):
-        """工作线程，从队列获取并处理请求"""
+        """Worker thread function that processes requests from the queue."""
         while self.running:
             task = self.request_queue.get()
             if task is None:  # 结束信号
@@ -259,12 +309,12 @@ class Endpoint:
             with self.lock:
                 if message_id and message_id in self.response_handlers:
                     try:
-                        self.response_handlers[message_id](data, info)
+                        self.response_handlers[message_id](thread_request)
                         del self.response_handlers[message_id]  # 处理完成后移除handler
                         self.request_queue.task_done()
                         continue
                     except Exception as e:
-                        logger.error(f"处理响应 ID '{message_id}' 时出错: {e}")
+                        logger.error(f"Error processing response ID '{message_id}': {e}")
                         self.request_queue.task_done()
                         continue
             
@@ -295,25 +345,25 @@ class Endpoint:
                                     'message_id': thread_request.message_id
                                 })
                         except Exception as e2:
-                            logger.error(f"错误处理器处理异常时出错: {e2}")
+                            logger.error(f"Error handler encountered an error: {e2}")
                     else:
-                        logger.error(f"处理路由 '{route}' 时出错: {e}")
+                        logger.error(f"Error processing route '{route}': {e}")
             # 没有路由或路由未注册，使用默认处理器
             elif self.default_handler:
                 try:
                     # 不再需要替换全局请求对象
-                    self.default_handler(data, info)
+                    self.default_handler()
                 except Exception as e:
                     if self.error_handler:
                         try:
                             self.error_handler(e)
                         except Exception as e2:
-                            logger.error(f"错误处理器处理异常时出错: {e2}")
+                            logger.error(f"Error processing route '{route}': {e}")
                     else:
-                        logger.error(f"默认处理器处理消息时出错: {e}")
+                        logger.error(f"Default handler encountered an error processing message: {e}")
             
             # 触发请求事件
-            self.event.emit('request', data, info)
+            self.event.emit('request', thread_request)
             
             # 处理响应后触发响应事件
             if isinstance(result, Response):
@@ -322,24 +372,28 @@ class Endpoint:
             self.request_queue.task_done()
 
     def _blocking_recv_save_data(self, data:bytes, info:dict):
+        """Save received data for blocking receive operations."""
         message_id = info.get('message_id')
         self.blocking_recv[message_id] = Request(data, info)
     
     def _blocking_recv(self, message_id:str):
+        """Wait for and retrieve response data for blocking receive operations."""
         while message_id not in self.blocking_recv.keys():
             pass
         return self.blocking_recv.pop(message_id)
     
     def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False) -> str|Request:
-        """发送请求到对端
+        """Send a request to the remote endpoint.
         
         Args:
-            route: 请求的路由
-            data: 请求的数据
-            callback: 响应回调函数，接收 (data, info) 两个参数。如果存在，本次响应会覆盖设置的回调函数
+            route: The route to send the request to
+            data: The request data
+            callback: Optional response callback function that takes (data, info) parameters
+            blocking_recv: If True, wait for and return the response
             
         Returns:
-            str: 消息ID
+            str: Message ID if not blocking
+            Request: Response request object if blocking
         """
         # 使用 Utils.safe_code 生成唯一的消息ID
         message_id = Utils.safe_code(8)
@@ -372,11 +426,11 @@ class Endpoint:
         return message_id
     
     def send_response(self, data: Any, info: dict) -> None:
-        """发送响应到对端
+        """Send a response back to the remote endpoint.
         
         Args:
-            data: 响应数据
-            info: 原始请求的信息
+            data: The response data
+            info: The original request info
         """
         if isinstance(data, dict):
             data_bytes = json.dumps(data).encode('utf-8')
@@ -393,7 +447,11 @@ class Endpoint:
         })
     
     def start(self, block: bool = True):
-        """启动端点"""
+        """Start the endpoint.
+        
+        Args:
+            block: If True, block the current thread until the endpoint stops
+        """
         self.pipe.start()
         self.running = True
         self.scheduler.start()  # 启动调度器
@@ -406,20 +464,28 @@ class Endpoint:
         
         if block:
             self.handler_thread.join()
+            
     def stop(self):
-        """停止端点"""
+        """Stop the endpoint and release resources."""
         self.running = False
         self.scheduler.stop()  # 停止调度器
-        if self.handler_thread:
+        
+        # 添加检查，避免线程加入自己
+        current_thread = threading.current_thread()
+        if self.handler_thread and self.handler_thread != current_thread:
             self.handler_thread.join(timeout=1.0)
+        
         # 触发停止事件
         self.event.emit('stop')
     
     def register_blueprint(self, blueprint):
-        """注册蓝图到端点
+        """Register a blueprint with this endpoint.
         
         Args:
-            blueprint: 要注册的蓝图实例
+            blueprint: The blueprint instance to register
+            
+        Returns:
+            self: The endpoint instance for chaining
         """
         for route, handler in blueprint.routes.items():
             if route == f"{blueprint.prefix}/__default__":
@@ -428,7 +494,7 @@ class Endpoint:
                     self.default_handler = handler
                 continue
             self.routes[route] = handler
-        logger.info(f"端点注册蓝图 '{blueprint.name}'，共 {len(blueprint.routes)} 个路由")
+        logger.info(f"Endpoint registered blueprint '{blueprint.name}' with {len(blueprint.routes)} routes")
         return self  # 返回self以支持链式调用
         
         
