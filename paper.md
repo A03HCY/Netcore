@@ -18,7 +18,7 @@ date: 24 March 2025
 
 # Summary
 
-Communication protocols play a crucial role in modern software systems. While many mature communication protocols and frameworks exist, custom communication protocols are often required in specific scenarios. Netcore is a lightweight and extensible communication framework implemented in Python that enables concurrent message transmission over a single connection. Its unique design only requires basic I/O functions (send/receive) from developers, abstracting away all the complexity of protocol implementation, concurrent transmission, and message management. By implementing a message chunking and scheduling mechanism similar to CPU time-slicing, it allows multiple messages to be sent and received simultaneously without establishing multiple connections.
+Communication protocols play a crucial role in modern software systems. While many mature communication protocols and frameworks exist, custom communication protocols are often required in specific scenarios. Netcore is a lightweight and extensible communication framework implemented in Python that enables concurrent message transmission over a single connection. Its unique design only requires basic I/O functions (send/receive) from developers, abstracting away all the complexity of protocol implementation, concurrent transmission, and message management. Through message chunking and scheduling mechanisms, it allows multiple messages to be sent and received simultaneously without establishing multiple connections.
 
 # Statement of need
 

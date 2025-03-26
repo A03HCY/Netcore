@@ -1,4 +1,5 @@
-from typing import Dict, List, Callable, Any
+from typing import Dict, List, Callable
+
 import logging
 
 logger = logging.getLogger("netcore.event")

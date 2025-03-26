@@ -1,23 +1,31 @@
-from .lso   import *
-from typing import Any, Dict, Callable, List
-from .event import EventEmitter
+from .lso       import *
+from typing     import Any, Dict, Callable, List
+from .event     import EventEmitter
 from .scheduler import Scheduler
-from .cache import Cache
+from .cache     import Cache
+
 import json
 import threading
-import time
 import logging
 import functools
+import queue
+from concurrent.futures import ThreadPoolExecutor
 
 # 配置日志记录器
 logger = logging.getLogger("netcore")
 
-# 全局请求对象，用于在处理请求时访问
+# 线程本地存储
+_thread_local = threading.local()
+
+# 请求类
 class Request:
-    def __init__(self, meta: bytes = None):
+    def __init__(self, meta: bytes = None, info: dict = None):
         self.meta = meta if isinstance(meta, bytes) else bytes(meta)
         self.json = None
         self.string = None
+        self.route = info.get('route', '')
+        self.message_id = info.get('message_id', '')
+        self.is_response = info.get('is_response', False)
         try:
             self.json = json.loads(self.meta)
         except:
@@ -27,8 +35,26 @@ class Request:
         except:
             self.string = ''
 
-# 全局请求对象实例
-request = Request(b'')
+# 请求代理类 - 类似Flask的实现
+class RequestProxy:
+    """请求代理对象，自动从线程本地存储获取当前请求"""
+    
+    def __getattr__(self, name):
+        if not hasattr(_thread_local, 'request'):
+            _thread_local.request = Request(b'')
+        return getattr(_thread_local.request, name)
+    
+    def __setattr__(self, name, value):
+        if not hasattr(_thread_local, 'request'):
+            _thread_local.request = Request(b'')
+        setattr(_thread_local.request, name, value)
+
+# 设置当前线程的请求对象
+def set_request(req):
+    _thread_local.request = req
+
+# 全局请求对象 - 现在是一个代理
+request = RequestProxy()
 
 class Response:
     def __init__(self, route: str, data: Any) -> None:
@@ -55,11 +81,12 @@ class Response:
             return str(self.data).encode('utf-8')
 
 class Endpoint:
-    def __init__(self, pipe: Pipe):
+    def __init__(self, pipe: Pipe, max_workers: int = 4):
         """创建端点
         
         Args:
             pipe: 用于通信的管道
+            max_workers: 工作线程数量，默认为4
         """
         self.pipe = pipe
         self.routes: Dict[str, Callable] = {}
@@ -68,6 +95,8 @@ class Endpoint:
         self.default_handler = None  # 默认消息处理器
         self.response_handlers: Dict[str, Callable] = {}  # 响应处理器
         
+        self.blocking_recv: Dict[str, Request] = {}  # 阻塞收消息
+
         # 新增功能
         self.middlewares: List[Callable] = []  # 中间件列表
         self.error_handler = None  # 错误处理器
@@ -77,6 +106,12 @@ class Endpoint:
         self.event = EventEmitter()  # 事件系统
         self.scheduler = Scheduler()  # 定时任务系统
         self.cache = Cache()  # 缓存系统
+        
+        # 多线程支持
+        self.max_workers = max_workers
+        self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+        self.request_queue = queue.Queue()
+        self.lock = threading.RLock()  # 可重入锁
     
     def request(self, route: str):
         """路由装饰器，用于注册处理不同路由的函数
@@ -88,6 +123,9 @@ class Endpoint:
             @functools.wraps(func)
             def wrapper():
                 try:
+                    # 请求对象已经通过线程本地存储设置好了
+                    # 不需要显式获取
+                    
                     # 执行请求前钩子
                     for before_func in self.before_request_funcs:
                         before_result = before_func()
@@ -172,48 +210,79 @@ class Endpoint:
         """处理接收到的请求"""
         global request
         
+        worker_threads = []
+        # 启动工作线程
+        for _ in range(self.max_workers):
+            thread = threading.Thread(target=self._worker_thread)
+            thread.daemon = True
+            thread.start()
+            worker_threads.append(thread)
+            
         while self.running:
             if not self.pipe.is_data:
-                time.sleep(0.1)
+                if self.pipe.recv_exception:
+                    logger.error(f"管道接收异常: {self.pipe.recv_exception}")
+                    logger.info("端点停止")
+                    self.event.emit('recv_exception')
+                    self.stop()
                 continue
                 
             data, info = self.pipe.recv()
             if not data or not info:
                 continue
             
-            # 更新全局请求对象的属性，而不是创建新对象
-            request.meta = data
-            try:
-                request.json = json.loads(data)
-            except:
-                request.json = {}
-            try:
-                request.string = data.decode('utf-8')
-            except:
-                request.string = ''
+            # 将请求放入队列，由工作线程处理
+            self.request_queue.put((data, info))
+        
+        # 等待所有工作线程结束
+        for _ in range(self.max_workers):
+            self.request_queue.put(None)  # 发送结束信号
+        for thread in worker_threads:
+            thread.join()
+    
+    def _worker_thread(self):
+        """工作线程，从队列获取并处理请求"""
+        while self.running:
+            task = self.request_queue.get()
+            if task is None:  # 结束信号
+                self.request_queue.task_done()
+                break
+                
+            data, info = task
+            
+            # 创建线程本地的请求对象
+            thread_request = Request(data, info)
+            set_request(thread_request)  # 设置线程本地请求对象
             
             # 处理消息ID的响应
-            message_id = info.get('message_id')
-            if message_id and message_id in self.response_handlers:
-                try:
-                    self.response_handlers[message_id](data, info)
-                    del self.response_handlers[message_id]  # 处理完成后移除handler
-                    continue
-                except Exception as e:
-                    logger.error(f"处理响应 ID '{message_id}' 时出错: {e}")
-                    continue
+            message_id = thread_request.message_id
+            with self.lock:
+                if message_id and message_id in self.response_handlers:
+                    try:
+                        self.response_handlers[message_id](data, info)
+                        del self.response_handlers[message_id]  # 处理完成后移除handler
+                        self.request_queue.task_done()
+                        continue
+                    except Exception as e:
+                        logger.error(f"处理响应 ID '{message_id}' 时出错: {e}")
+                        self.request_queue.task_done()
+                        continue
             
-            route = info.get('route', '')
+            route = thread_request.route
+            result = None
+            
             # 有路由的情况，调用对应的处理函数
             if route and route in self.routes:
                 try:
+                    # 不再需要替换全局请求对象，直接使用线程本地存储
                     result = self.routes[route]()
+                    
                     if isinstance(result, Response):
                         # 发送响应
                         self.pipe.send(result.to_bytes(), {
                             'route': result.route,
                             'is_response': True,
-                            'message_id': info.get('message_id')  # 返回相同的消息ID
+                            'message_id': thread_request.message_id  # 返回相同的消息ID
                         })
                 except Exception as e:
                     if self.error_handler:
@@ -223,7 +292,7 @@ class Endpoint:
                                 self.pipe.send(result.to_bytes(), {
                                     'route': result.route,
                                     'is_response': True,
-                                    'message_id': info.get('message_id')
+                                    'message_id': thread_request.message_id
                                 })
                         except Exception as e2:
                             logger.error(f"错误处理器处理异常时出错: {e2}")
@@ -232,6 +301,7 @@ class Endpoint:
             # 没有路由或路由未注册，使用默认处理器
             elif self.default_handler:
                 try:
+                    # 不再需要替换全局请求对象
                     self.default_handler(data, info)
                 except Exception as e:
                     if self.error_handler:
@@ -248,8 +318,19 @@ class Endpoint:
             # 处理响应后触发响应事件
             if isinstance(result, Response):
                 self.event.emit('response', result)
+                
+            self.request_queue.task_done()
+
+    def _blocking_recv_save_data(self, data:bytes, info:dict):
+        message_id = info.get('message_id')
+        self.blocking_recv[message_id] = Request(data, info)
     
-    def send(self, route: str, data: Any, callback: Callable = None) -> str:
+    def _blocking_recv(self, message_id:str):
+        while message_id not in self.blocking_recv.keys():
+            pass
+        return self.blocking_recv.pop(message_id)
+    
+    def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False) -> str|Request:
         """发送请求到对端
         
         Args:
@@ -264,8 +345,11 @@ class Endpoint:
         message_id = Utils.safe_code(8)
         
         # 如果有回调，注册到响应处理器
-        if callback:
-            self.response_handlers[message_id] = callback
+        with self.lock:
+            if callback and blocking_recv == False:
+                self.response_handlers[message_id] = callback
+            if blocking_recv == True:
+                self.response_handlers[message_id] = self._blocking_recv_save_data
         
         # 发送数据
         if isinstance(data, dict):
@@ -281,6 +365,9 @@ class Endpoint:
             'route': route,
             'message_id': message_id
         })
+
+        if blocking_recv:
+            return self._blocking_recv(message_id)
         
         return message_id
     

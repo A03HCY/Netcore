@@ -1,12 +1,12 @@
-from typing import Callable, Union, Optional, Generator, Tuple
-from struct import pack, unpack
-from os     import path, read as osread
-from mmap   import mmap, ACCESS_WRITE
-from random import choices
-from string import ascii_letters, digits
-
+from typing    import Callable, Union, Optional, Generator, Tuple
+from struct    import pack, unpack
+from os        import path, read as osread
+from mmap      import mmap, ACCESS_WRITE
+from random    import choices
+from string    import ascii_letters, digits
 from queue     import Queue
-from threading import Thread
+from threading import Thread, RLock
+
 import json
 import logging
 
@@ -624,6 +624,10 @@ class Pipe:
         # 发送任务的额外信息
         self.misson_info: dict[str, dict] = {}  # 存储发送任务的元信息
 
+        # 添加线程锁
+        self.send_lock = RLock()
+        self.recv_lock = RLock()
+
         # 接收和发送线程
         self.recv_thread = Thread(target=self._recv_thread)
         self.send_thread = Thread(target=self._send_thread)
@@ -668,21 +672,22 @@ class Pipe:
         Returns:
             str: 任务的扩展标识符
         """
-        extension = extension or Utils.safe_code(6)
-        queue = Queue()
-        for i in Utils.split_bytes_into_chunks(data, buff):
-            queue.put(i)
-        self.send_pool[extension] = queue
-        self.misson_info[extension] = {
-            'length': len(data)
-        }
-        # 保存任务到待发送队列
-        self.mission_head.put({
-            'extension': extension,
-            'length': len(data),
-            'info': info,
-        })
-        return extension
+        with self.send_lock:  # 添加锁保护
+            extension = extension or Utils.safe_code(6)
+            queue = Queue()
+            for i in Utils.split_bytes_into_chunks(data, buff):
+                queue.put(i)
+            self.send_pool[extension] = queue
+            self.misson_info[extension] = {
+                'length': len(data)
+            }
+            # 保存任务到待发送队列
+            self.mission_head.put({
+                'extension': extension,
+                'length': len(data),
+                'info': info,
+            })
+            return extension
     
     def _send_thread(self):
         """发送线程的主函数。
@@ -695,7 +700,10 @@ class Pipe:
                 if self.recv_exception:
                     self.recv_exception = False
                     self._send_error_handler('with_exception')
-                send_pool_copy = list(self.send_pool.items())
+                
+                with self.send_lock:  # 添加锁保护
+                    send_pool_copy = list(self.send_pool.items())
+                
                 for extension, queue in send_pool_copy:
                     # 发送任务头
                     while not self.mission_head.empty():
@@ -704,13 +712,18 @@ class Pipe:
                             'type': 'mission'
                         })
                         self.mission_head.task_done()
-                    info = self.misson_info[extension]
+                    
+                    with self.send_lock:  # 添加锁保护
+                        info = self.misson_info[extension]
+                    
                     # 发送任务数据
                     if queue.empty():
-                        logger.info(f'{extension} mission completed. size: {info["length"]}')
-                        self.send_pool.pop(extension)
-                        self.misson_info.pop(extension)
+                        with self.send_lock:  # 添加锁保护
+                            logger.info(f'{extension} mission completed. size: {info["length"]}')
+                            self.send_pool.pop(extension)
+                            self.misson_info.pop(extension)
                         continue
+                    
                     data = queue.get()
                     self._send(data, {
                         'type': 'data',
@@ -733,24 +746,29 @@ class Pipe:
                 if info['type'] == 'mission':
                     # 接收任务头
                     data = lso.json
-                    self.temp_pool[data['extension']] = {
-                        'length': data['length'],
-                        'recv': 0,
-                        'data': bytearray(),
-                    }
-                    self.recv_info[data['extension']] = data['info']
+                    with self.recv_lock:  # 添加锁保护
+                        self.temp_pool[data['extension']] = {
+                            'length': data['length'],
+                            'recv': 0,
+                            'data': bytearray(),
+                        }
+                        self.recv_info[data['extension']] = data['info']
                     continue
+                
                 # 接收任务数据
-                self.temp_pool[info['extension']]['data'] += lso.meta
-                self.temp_pool[info['extension']]['recv'] += len(lso.meta)
-                # 接收任务完成
-                if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
-                    self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
-                    self.temp_pool.pop(info['extension'])
-                    continue
-                # 接收任务数据错误
-                if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
-                    raise ValueError(f'{info["extension"]} recv length error.')
+                with self.recv_lock:  # 添加锁保护
+                    self.temp_pool[info['extension']]['data'] += lso.meta
+                    self.temp_pool[info['extension']]['recv'] += len(lso.meta)
+                    
+                    # 接收任务完成
+                    if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
+                        self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
+                        self.temp_pool.pop(info['extension'])
+                        continue
+                    
+                    # 接收任务数据错误
+                    if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
+                        raise ValueError(f'{info["extension"]} recv length error.')
         except KeyboardInterrupt:
             self._recv_error_handler('close')
         except Exception as e:
@@ -799,17 +817,20 @@ class Pipe:
         
         从接收池中获取一个完整的数据包。
         """
-        if not self.recv_pool: return None
-        extension, data = self.recv_pool.popitem()
-        info = self.recv_info.pop(extension)
-        info.update({
-            'extension': extension
-        })
-        return data, info
+        with self.recv_lock:  # 添加锁保护
+            if not self.recv_pool: 
+                return None, None  # 修改返回值，防止解包错误
+            extension, data = self.recv_pool.popitem()
+            info = self.recv_info.pop(extension)
+            info.update({
+                'extension': extension
+            })
+            return data, info
     
     @property
     def is_data(self) -> bool:
-        return self.recv_pool != {}
+        with self.recv_lock:  # 添加锁保护
+            return bool(self.recv_pool)
     
     def start(self):
         self.recv_thread.start()
