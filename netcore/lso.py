@@ -6,7 +6,9 @@ from random    import choices
 from string    import ascii_letters, digits
 from queue     import Queue
 from threading import Thread, RLock
+from .error    import NetcoreError
 
+import inspect
 import json
 import logging
 
@@ -111,7 +113,107 @@ class Utils:
             >>> Utils.safe_code(8)  # Returns an 8-character random code like 'a2Bc7dEf'
         """
         return ''.join(choices(ascii_letters + digits, k=length))
+    
+    @staticmethod
+    def split_bytes(data, n):
+        """Split binary data into prefix segment and remaining bytes.
+        
+        Divides input bytes/bytearray into two consecutive parts at specified position,
+        maintaining original data type. Handles edge cases like zero split or oversized index.
+        
+        Args:
+            data: Binary data to split (bytes or bytearray)
+            n:     Split position index (non-negative integer)
+        
+        Returns:
+            tuple: Contains two elements matching input type:
+                - First n bytes (or full data if n > length)
+                - Remaining bytes after n (empty if n >= length)
+        
+        Examples:
+            >>> split_bytes(b'abcdef', 3)
+            (b'abc', b'def')
+            
+            >>> split_bytes(bytearray(b'12345'), 5)
+            (bytearray(b'12345'), bytearray(b''))
+        
+        Raises:
+            TypeError: If invalid data type or non-integer n
+            ValueError: If negative split position
+        """
+        if not isinstance(data, (bytes, bytearray)):
+            raise TypeError("Data must be of type bytes or bytearray")
+        if not isinstance(n, int):
+            raise TypeError("n must be an integer")
+        if n < 0:
+            raise ValueError("n must be a non-negative integer")
+        
+        return (data[:n], data[n:])
+    
+    @staticmethod
+    def accepts_single_argument(func: Callable) -> bool:
+        """Verify if a function can be called with exactly one positional argument.
+        
+        Validation criteria:
+        1. Must have exactly one required positional parameter, OR
+        2. Has one required parameter followed by optional parameters, OR
+        3. Accepts variable arguments (*args)
+        
+        Args:
+            func (Callable): Target function to inspect
+            
+        Returns:
+            bool: True if the function can be called with a single argument, False otherwise
+            
+        Examples:
+            >>> def foo(a): ...
+            >>> accepts_single_argument(foo)
+            True
+            
+            >>> def bar(a, b=0): ...
+            >>> accepts_single_argument(bar)
+            True
+            
+            >>> def baz(a, *args): ...
+            >>> accepts_single_argument(baz)
+            True
+            
+            >>> def qux(a, b): ...
+            >>> accepts_single_argument(qux)
+            False
+            
+            >>> accepts_single_argument(lambda x: x)
+            True
+        """
+        try:
+            sig = inspect.signature(func)
+        except ValueError:
+            return False  # 无法获取签名的函数视为不兼容
 
+        params = list(sig.parameters.values())
+        required = 0
+        has_varargs = False
+
+        for p in params:
+            # 检测位置参数
+            if p.kind == p.POSITIONAL_OR_KEYWORD:
+                if p.default == p.empty:
+                    required += 1
+                else:
+                    break  # 遇到可选参数停止计数
+            # 处理可变参数 (def func(*args))
+            elif p.kind == p.VAR_POSITIONAL:
+                has_varargs = True
+            # 其他类型参数直接阻断
+            elif p.kind in (p.KEYWORD_ONLY, p.VAR_KEYWORD):
+                return False
+
+        # 判断逻辑
+        return (
+            (required == 1) or          # 标准必须参数
+            (has_varargs and required <= 1) or  # 支持 *args 
+            (required == 0 and len(params) >= 1)  # 全可选参数
+        )
 
 '''
 LsoPrococol:
@@ -583,6 +685,52 @@ class LsoProtocol:
             return self._set_length
 
 
+class RecvWrapper:
+    """Adapts non-parametric receive functions to length-aware buffered receiver.
+    
+    Acts as an adapter for data sources that don't support length parameters in their
+    native receive calls. Implements buffering logic to fulfill exact byte quantity
+    requests through automatic data accumulation.
+
+    Typical use: Wrap socket-like objects with blocking recv() that returns variable-
+    sized chunks when called without parameters.
+
+    Design Rationale:
+    - Transforms signature: () -> bytes → (length: int) -> bytes
+    - Solves partial read problem for stream-oriented protocols
+    - Decouples network chunking from application read boundaries
+
+    Args:
+        recv: Core receive function with signature () -> bytes. Must block until new
+            data arrives, returning empty bytes only on connection closure.
+    """
+    
+    def __init__(self, recv: Callable[[], bytes]):
+        """Initialize buffer with raw byte receiver."""
+        self.recv_func = recv
+        self.recv_data = bytearray()
+    
+    def recv(self, length: int) -> bytes:
+        """Block until exactly `length` bytes are available.
+        
+        Implements buffering through:
+        1. Data accumulation loop
+        2. Buffer slicing via Utils.split_bytes
+        3. State preservation of remaining bytes
+        
+        Raises:
+            ConnectionError: If underlying recv() returns empty bytes (EOF) before
+                fulfilling requested length
+        """
+        while len(self.recv_data) < length:
+            chunk = self.recv_func()
+            if not chunk:
+                raise ConnectionError("Unexpected EOF during buffered read")
+            self.recv_data.extend(chunk)
+        
+        data, self.recv_data = Utils.split_bytes(self.recv_data, length)
+        return data
+
 '''
 Mission Head (use LsoProtocol):
 extension: dict {type:mssion} | meta: dict
@@ -606,6 +754,8 @@ class Pipe:
             recv_function: Function to receive data, accepts an optional integer parameter (number of bytes to read)
             send_function: Function to send data, accepts a bytes parameter (data to send)
         """
+        if not Utils.accepts_single_argument(recv_function):
+            recv_function = RecvWrapper(recv_function)
         self.recv_function = recv_function  # 接收数据的函数
         self.send_function = send_function  # 发送数据的函数
         # 任务头队列，优先发送
@@ -633,6 +783,24 @@ class Pipe:
         self.recv_exception = False
 
         self.final_error_handler: Callable = None
+        self.cancel_handler: Callable[[str], None] = self._cancel_handler
+        self.mission_complete_handler: Callable[[str], None] = self._mission_complete_handler
+    
+    def _mission_complete_handler(self, extension: str) -> None:
+        """Handle mission completion.
+        
+        Args:
+            extension: The extension identifier of the task that has completed
+        """
+        pass
+
+    def _cancel_handler(self, extension: str) -> None:
+        """Handle mission cancellation.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+        """
+        pass
     
     def _recv(self) -> tuple[LsoProtocol, dict]:
         """Receive a complete LSO protocol data packet.
@@ -708,9 +876,18 @@ class Pipe:
                     # 发送任务头
                     while not self.mission_head.empty():
                         mission = self.mission_head.get()
-                        self._send(json.dumps(mission), {
-                            'type': 'mission'
-                        })
+                        # 处理不同类型的任务头
+                        if mission.get('type') == 'cancel':
+                            # 发送取消消息
+                            self._send(json.dumps({"extension": mission['extension']}), {
+                                "type": "cancel",
+                                "extension": mission['extension']
+                            })
+                        else:
+                            # 发送正常任务头
+                            self._send(json.dumps(mission), {
+                                'type': 'mission'
+                            })
                         self.mission_head.task_done()
                     
                     with self.send_lock:  # 添加锁保护
@@ -722,6 +899,7 @@ class Pipe:
                             logger.info(f'{extension} mission completed. size: {info["length"]}')
                             self.send_pool.pop(extension)
                             self.misson_info.pop(extension)
+                            self.mission_complete_handler(extension)
                         continue
                     
                     data = queue.get()
@@ -743,10 +921,12 @@ class Pipe:
         try:
             while True:
                 lso, info = self._recv()
+                
+                # Handle mission task header
                 if info['type'] == 'mission':
                     # 接收任务头
                     data = lso.json
-                    with self.recv_lock:  # 添加锁保护
+                    with self.recv_lock:
                         self.temp_pool[data['extension']] = {
                             'length': data['length'],
                             'recv': 0,
@@ -755,18 +935,41 @@ class Pipe:
                         self.recv_info[data['extension']] = data['info']
                     continue
                 
-                # 接收任务数据
-                with self.recv_lock:  # 添加锁保护
+                # Handle cancellation message
+                if info['type'] == 'cancel':
+                    extension = info.get('extension')
+                    with self.recv_lock:
+                        # Remove from temp pool if task is in progress
+                        if extension in self.temp_pool:
+                            self.temp_pool.pop(extension, None)
+                            logger.info(f"Canceled ongoing reception of task {extension}")
+                        
+                        # Remove from recv pool if task was completed
+                        if extension in self.recv_pool:
+                            self.recv_pool.pop(extension, None)
+                            self.recv_info.pop(extension, None)
+                            logger.info(f"Removed completed task {extension} due to cancellation")
+                    self.cancel_handler(extension)
+                    continue
+                
+                # Handle task data
+                with self.recv_lock:
+                    # Check if task was canceled or doesn't exist
+                    if info['extension'] not in self.temp_pool:
+                        logger.debug(f"Ignoring data for canceled or unknown task {info['extension']}")
+                        continue
+                    
+                    # Process the data
                     self.temp_pool[info['extension']]['data'] += lso.meta
                     self.temp_pool[info['extension']]['recv'] += len(lso.meta)
                     
-                    # 接收任务完成
+                    # Task completed check
                     if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
                         self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
                         self.temp_pool.pop(info['extension'])
                         continue
                     
-                    # 接收任务数据错误
+                    # Data error check
                     if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
                         raise ValueError(f'{info["extension"]} recv length error.')
         except KeyboardInterrupt:
@@ -807,7 +1010,7 @@ class Pipe:
         if message == 'close':
             logger.info('Pipe closed.')
     
-    def send(self, data:bytes, info:dict={}):
+    def send(self, data:bytes, info:dict={}) -> str:
         """Send data and related information.
         
         Simplified version of create_mission, for quick data sending.
@@ -815,8 +1018,11 @@ class Pipe:
         Args:
             data: Byte data to send
             info: Metadata related to the data
+            
+        Returns:
+            str: The mission's extension identifier
         """
-        self.create_mission(data, info)
+        return self.create_mission(data, info)
     
     def recv(self) -> tuple[bytes, dict]:
         """Receive data and related information.
@@ -850,3 +1056,37 @@ class Pipe:
         """Start the pipe's send and receive threads."""
         self.recv_thread.start()
         self.send_thread.start()
+
+    def cancel_mission(self, extension: str) -> bool:
+        """Cancel a specific transmission task.
+        
+        Removes the task from the send queue and sends a cancellation message to the remote endpoint.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+            
+        Returns:
+            bool: True if the task was found and canceled, False otherwise
+        """
+        with self.send_lock:
+            # Check if the task exists in our send pool
+            if extension not in self.send_pool:
+                logger.warning(f"Cannot cancel mission {extension}: not found")
+                return False
+            
+            # Remove the task from our send pools
+            self.send_pool.pop(extension, None)
+            self.misson_info.pop(extension, None)
+            
+            # Schedule a cancellation message to be sent
+            try:
+                # 创建取消消息并加入任务头队列，保持消息顺序
+                self.mission_head.put({
+                    'type': 'cancel',
+                    'extension': extension
+                })
+                logger.info(f"Mission {extension} canceled successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Error scheduling cancellation message for {extension}: {e}")
+                return False

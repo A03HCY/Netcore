@@ -18,11 +18,13 @@ class Cache:
         self._cache: Dict[str, tuple[Any, float, Optional[int]]] = {}  # (value, timestamp, ttl)
         self._default_ttl = default_ttl
         self._lock = threading.Lock()
-        
+
+        self.running = True
         # 启动清理线程
         self._cleanup_thread = threading.Thread(target=self._cleanup_loop)
         self._cleanup_thread.daemon = True
         self._cleanup_thread.start()
+        logger.info("Cache initialized")
     
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
         """Set cache value
@@ -70,9 +72,14 @@ class Cache:
         with self._lock:
             self._cache.clear()
     
+    def stop(self):
+        """Stop the cache cleanup thread"""
+        self.running = False
+        self._cleanup_thread.join()
+    
     def _cleanup_loop(self):
         """Cleanup loop for expired cache items"""
-        while True:
+        while self.running:
             time.sleep(60)  # 每分钟检查一次
             with self._lock:
                 now = time.time()
@@ -81,4 +88,5 @@ class Cache:
                     if now - timestamp > ttl
                 ]
                 for key in expired:
-                    del self._cache[key] 
+                    del self._cache[key]
+        logger.info("Cache cleanup thread stopped")
