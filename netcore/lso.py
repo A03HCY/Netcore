@@ -858,9 +858,18 @@ class Pipe:
                     # 发送任务头
                     while not self.mission_head.empty():
                         mission = self.mission_head.get()
-                        self._send(json.dumps(mission), {
-                            'type': 'mission'
-                        })
+                        # 处理不同类型的任务头
+                        if mission.get('type') == 'cancel':
+                            # 发送取消消息
+                            self._send(json.dumps({"extension": mission['extension']}), {
+                                "type": "cancel",
+                                "extension": mission['extension']
+                            })
+                        else:
+                            # 发送正常任务头
+                            self._send(json.dumps(mission), {
+                                'type': 'mission'
+                            })
                         self.mission_head.task_done()
                     
                     with self.send_lock:  # 添加锁保护
@@ -893,10 +902,12 @@ class Pipe:
         try:
             while True:
                 lso, info = self._recv()
+                
+                # Handle mission task header
                 if info['type'] == 'mission':
                     # 接收任务头
                     data = lso.json
-                    with self.recv_lock:  # 添加锁保护
+                    with self.recv_lock:
                         self.temp_pool[data['extension']] = {
                             'length': data['length'],
                             'recv': 0,
@@ -905,18 +916,40 @@ class Pipe:
                         self.recv_info[data['extension']] = data['info']
                     continue
                 
-                # 接收任务数据
-                with self.recv_lock:  # 添加锁保护
+                # Handle cancellation message
+                if info['type'] == 'cancel':
+                    extension = info.get('extension')
+                    with self.recv_lock:
+                        # Remove from temp pool if task is in progress
+                        if extension in self.temp_pool:
+                            self.temp_pool.pop(extension, None)
+                            logger.info(f"Canceled ongoing reception of task {extension}")
+                        
+                        # Remove from recv pool if task was completed
+                        if extension in self.recv_pool:
+                            self.recv_pool.pop(extension, None)
+                            self.recv_info.pop(extension, None)
+                            logger.info(f"Removed completed task {extension} due to cancellation")
+                    continue
+                
+                # Handle task data
+                with self.recv_lock:
+                    # Check if task was canceled or doesn't exist
+                    if info['extension'] not in self.temp_pool:
+                        logger.debug(f"Ignoring data for canceled or unknown task {info['extension']}")
+                        continue
+                    
+                    # Process the data
                     self.temp_pool[info['extension']]['data'] += lso.meta
                     self.temp_pool[info['extension']]['recv'] += len(lso.meta)
                     
-                    # 接收任务完成
+                    # Task completed check
                     if self.temp_pool[info['extension']]['recv'] == self.temp_pool[info['extension']]['length']:
                         self.recv_pool[info['extension']] = self.temp_pool[info['extension']]['data']
                         self.temp_pool.pop(info['extension'])
                         continue
                     
-                    # 接收任务数据错误
+                    # Data error check
                     if self.temp_pool[info['extension']]['recv'] > self.temp_pool[info['extension']]['length']:
                         raise ValueError(f'{info["extension"]} recv length error.')
         except KeyboardInterrupt:
@@ -1000,3 +1033,37 @@ class Pipe:
         """Start the pipe's send and receive threads."""
         self.recv_thread.start()
         self.send_thread.start()
+
+    def cancel_mission(self, extension: str) -> bool:
+        """Cancel a specific transmission task.
+        
+        Removes the task from the send queue and sends a cancellation message to the remote endpoint.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+            
+        Returns:
+            bool: True if the task was found and canceled, False otherwise
+        """
+        with self.send_lock:
+            # Check if the task exists in our send pool
+            if extension not in self.send_pool:
+                logger.warning(f"Cannot cancel mission {extension}: not found")
+                return False
+            
+            # Remove the task from our send pools
+            self.send_pool.pop(extension, None)
+            self.misson_info.pop(extension, None)
+            
+            # Schedule a cancellation message to be sent
+            try:
+                # 创建取消消息并加入任务头队列，保持消息顺序
+                self.mission_head.put({
+                    'type': 'cancel',
+                    'extension': extension
+                })
+                logger.info(f"Mission {extension} canceled successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Error scheduling cancellation message for {extension}: {e}")
+                return False
