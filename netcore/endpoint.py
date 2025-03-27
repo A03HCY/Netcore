@@ -3,6 +3,7 @@ from typing     import Any, Dict, Callable, List
 from .event     import EventEmitter
 from .scheduler import Scheduler
 from .cache     import Cache
+from .error     import *
 
 import json
 import threading
@@ -105,6 +106,8 @@ class Response:
         else:
             return str(self.data).encode('utf-8')
 
+
+
 class Endpoint:
     """Endpoint class for handling network communication.
     
@@ -186,7 +189,7 @@ class Endpoint:
                     # 执行错误处理
                     if self.error_handler:
                         return self.error_handler(e)
-                    raise  # 如果没有错误处理器，重新抛出异常
+                    raise EndpointMiddlewareError('Endpoint middleware error', e)
             
             self.routes[route] = wrapper
             return func
@@ -466,16 +469,23 @@ class Endpoint:
             
     def stop(self):
         """Stop the endpoint and release resources."""
-        self.running = False
-        self.scheduler.stop()  # 停止调度器
-        
-        # 添加检查，避免线程加入自己
-        current_thread = threading.current_thread()
-        if self.handler_thread and self.handler_thread != current_thread:
-            self.handler_thread.join(timeout=1.0)
-        
-        # 触发停止事件
-        self.event.emit('stop')
+        # 使用锁确保只执行一次
+        with self.lock:
+            if not self.running:  # 如果已经停止，直接返回
+                return
+            
+            self.running = False
+            self.scheduler.stop()  # 停止调度器
+            
+            # 添加检查，避免线程加入自己
+            current_thread = threading.current_thread()
+            if self.handler_thread and self.handler_thread != current_thread:
+                self.handler_thread.join(timeout=1.0)
+            
+            # 触发停止事件
+            self.event.emit('stop')
+            
+            logger.info("Endpoint stopped")
     
     def register_blueprint(self, blueprint):
         """Register a blueprint with this endpoint.

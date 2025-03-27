@@ -6,7 +6,9 @@ from random    import choices
 from string    import ascii_letters, digits
 from queue     import Queue
 from threading import Thread, RLock
+from .error    import NetcoreError
 
+import inspect
 import json
 import logging
 
@@ -111,7 +113,107 @@ class Utils:
             >>> Utils.safe_code(8)  # Returns an 8-character random code like 'a2Bc7dEf'
         """
         return ''.join(choices(ascii_letters + digits, k=length))
+    
+    @staticmethod
+    def split_bytes(data, n):
+        """Split binary data into prefix segment and remaining bytes.
+        
+        Divides input bytes/bytearray into two consecutive parts at specified position,
+        maintaining original data type. Handles edge cases like zero split or oversized index.
+        
+        Args:
+            data: Binary data to split (bytes or bytearray)
+            n:     Split position index (non-negative integer)
+        
+        Returns:
+            tuple: Contains two elements matching input type:
+                - First n bytes (or full data if n > length)
+                - Remaining bytes after n (empty if n >= length)
+        
+        Examples:
+            >>> split_bytes(b'abcdef', 3)
+            (b'abc', b'def')
+            
+            >>> split_bytes(bytearray(b'12345'), 5)
+            (bytearray(b'12345'), bytearray(b''))
+        
+        Raises:
+            TypeError: If invalid data type or non-integer n
+            ValueError: If negative split position
+        """
+        if not isinstance(data, (bytes, bytearray)):
+            raise TypeError("Data must be of type bytes or bytearray")
+        if not isinstance(n, int):
+            raise TypeError("n must be an integer")
+        if n < 0:
+            raise ValueError("n must be a non-negative integer")
+        
+        return (data[:n], data[n:])
+    
+    @staticmethod
+    def accepts_single_argument(func: Callable) -> bool:
+        """Verify if a function can be called with exactly one positional argument.
+        
+        Validation criteria:
+        1. Must have exactly one required positional parameter, OR
+        2. Has one required parameter followed by optional parameters, OR
+        3. Accepts variable arguments (*args)
+        
+        Args:
+            func (Callable): Target function to inspect
+            
+        Returns:
+            bool: True if the function can be called with a single argument, False otherwise
+            
+        Examples:
+            >>> def foo(a): ...
+            >>> accepts_single_argument(foo)
+            True
+            
+            >>> def bar(a, b=0): ...
+            >>> accepts_single_argument(bar)
+            True
+            
+            >>> def baz(a, *args): ...
+            >>> accepts_single_argument(baz)
+            True
+            
+            >>> def qux(a, b): ...
+            >>> accepts_single_argument(qux)
+            False
+            
+            >>> accepts_single_argument(lambda x: x)
+            True
+        """
+        try:
+            sig = inspect.signature(func)
+        except ValueError:
+            return False  # 无法获取签名的函数视为不兼容
 
+        params = list(sig.parameters.values())
+        required = 0
+        has_varargs = False
+
+        for p in params:
+            # 检测位置参数
+            if p.kind == p.POSITIONAL_OR_KEYWORD:
+                if p.default == p.empty:
+                    required += 1
+                else:
+                    break  # 遇到可选参数停止计数
+            # 处理可变参数 (def func(*args))
+            elif p.kind == p.VAR_POSITIONAL:
+                has_varargs = True
+            # 其他类型参数直接阻断
+            elif p.kind in (p.KEYWORD_ONLY, p.VAR_KEYWORD):
+                return False
+
+        # 判断逻辑
+        return (
+            (required == 1) or          # 标准必须参数
+            (has_varargs and required <= 1) or  # 支持 *args 
+            (required == 0 and len(params) >= 1)  # 全可选参数
+        )
 
 '''
 LsoPrococol:
@@ -583,6 +685,52 @@ class LsoProtocol:
             return self._set_length
 
 
+class RecvWrapper:
+    """Adapts non-parametric receive functions to length-aware buffered receiver.
+    
+    Acts as an adapter for data sources that don't support length parameters in their
+    native receive calls. Implements buffering logic to fulfill exact byte quantity
+    requests through automatic data accumulation.
+
+    Typical use: Wrap socket-like objects with blocking recv() that returns variable-
+    sized chunks when called without parameters.
+
+    Design Rationale:
+    - Transforms signature: () -> bytes → (length: int) -> bytes
+    - Solves partial read problem for stream-oriented protocols
+    - Decouples network chunking from application read boundaries
+
+    Args:
+        recv: Core receive function with signature () -> bytes. Must block until new
+            data arrives, returning empty bytes only on connection closure.
+    """
+    
+    def __init__(self, recv: Callable[[], bytes]):
+        """Initialize buffer with raw byte receiver."""
+        self.recv_func = recv
+        self.recv_data = bytearray()
+    
+    def recv(self, length: int) -> bytes:
+        """Block until exactly `length` bytes are available.
+        
+        Implements buffering through:
+        1. Data accumulation loop
+        2. Buffer slicing via Utils.split_bytes
+        3. State preservation of remaining bytes
+        
+        Raises:
+            ConnectionError: If underlying recv() returns empty bytes (EOF) before
+                fulfilling requested length
+        """
+        while len(self.recv_data) < length:
+            chunk = self.recv_func()
+            if not chunk:
+                raise ConnectionError("Unexpected EOF during buffered read")
+            self.recv_data.extend(chunk)
+        
+        data, self.recv_data = Utils.split_bytes(self.recv_data, length)
+        return data
+
 '''
 Mission Head (use LsoProtocol):
 extension: dict {type:mssion} | meta: dict
@@ -606,6 +754,8 @@ class Pipe:
             recv_function: Function to receive data, accepts an optional integer parameter (number of bytes to read)
             send_function: Function to send data, accepts a bytes parameter (data to send)
         """
+        if not Utils.accepts_single_argument(recv_function):
+            recv_function = RecvWrapper(recv_function)
         self.recv_function = recv_function  # 接收数据的函数
         self.send_function = send_function  # 发送数据的函数
         # 任务头队列，优先发送
