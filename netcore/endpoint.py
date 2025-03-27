@@ -1,5 +1,5 @@
 from .lso       import *
-from typing     import Any, Dict, Callable, List
+from typing     import Any, Dict, Callable, List, Union
 from .event     import EventEmitter
 from .scheduler import Scheduler
 from .cache     import Cache
@@ -33,6 +33,7 @@ class Request:
         self.route = info.get('route', '')
         self.message_id = info.get('message_id', '')
         self.is_response = info.get('is_response', False)
+        self.is_cancel = info.get('is_cancel', False)
         try:
             self.json = json.loads(self.meta)
         except:
@@ -124,6 +125,7 @@ class Endpoint:
         """
         self.pipe = pipe
         self.pipe.final_error_handler = self.stop
+        self.pipe.cancel_handler = self._cancel_handler
         self.routes: Dict[str, Callable] = {}
         self.running = False
         self.handler_thread = None
@@ -147,6 +149,9 @@ class Endpoint:
         self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
         self.request_queue = queue.Queue()
         self.lock = threading.RLock()  # 可重入锁
+        
+        # 添加extension到message_id的映射，用于处理任务取消
+        self.extension_to_message = {}
     
     def request(self, route: str):
         """Route decorator for registering functions to handle different routes.
@@ -380,11 +385,63 @@ class Endpoint:
     
     def _blocking_recv(self, message_id:str):
         """Wait for and retrieve response data for blocking receive operations."""
-        while message_id not in self.blocking_recv.keys():
-            pass
-        return self.blocking_recv.pop(message_id)
+        # 等待响应数据到达或被取消
+        while True:
+            with self.lock:
+                if message_id in self.blocking_recv:
+                    request = self.blocking_recv.pop(message_id)
+                    # 检查是否是取消消息
+                    if request.is_cancel == True:
+                        # 返回取消响应
+                        logger.info(f"Blocking receive for {message_id} was cancelled")
+                    return request
     
-    def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False) -> str|Request:
+    def _mission_complete_handler(self, extension: str) -> None:
+        """Handle mission completion.
+        
+        Args:
+            extension: The extension identifier of the task that has completed
+        """
+        with self.lock:
+            if extension in self.blocking_recv:
+                self.blocking_recv.pop(extension)
+    
+    def _cancel_handler(self, extension: str) -> None:
+        """Handle mission cancellation.
+        
+        When a mission is cancelled by the remote endpoint, this handler will notify
+        any waiting blocking receives with a cancellation response.
+        
+        Args:
+            extension: The extension identifier of the transmission task to cancel
+        """
+        with self.lock:
+            # 查找对应的message_id
+            if extension not in self.extension_to_message:
+                logger.debug(f"Received cancellation for unknown extension: {extension}")
+                return
+            
+            message_id = self.extension_to_message.pop(extension)
+            
+            cancel_request = Request(
+                json.dumps({
+                    "status": "cancelled",
+                    "message": "Mission was cancelled by the remote endpoint"
+                }).encode('utf-8'),
+                {"is_response": True, "message_id": message_id, "is_cancel": True}
+            )
+            
+            # 如果有阻塞接收在等待这个消息，发送取消通知
+            if message_id in self.response_handlers:
+                # 调用原本的响应处理器
+                try:
+                    self.response_handlers[message_id](cancel_request)
+                    del self.response_handlers[message_id]
+                    logger.info(f"Notified waiting handler for message {message_id} about cancellation")
+                except Exception as e:
+                    logger.error(f"Error notifying response handler about cancellation: {e}")
+
+    def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False) -> Union[str, Request, Dict[str, str]]:
         """Send a request to the remote endpoint.
         
         Args:
@@ -396,6 +453,7 @@ class Endpoint:
         Returns:
             str: Message ID if not blocking
             Request: Response request object if blocking
+            Dict[str, str]: Dictionary containing both message_id and mission_extension if the data is large
         """
         # 使用 Utils.safe_code 生成唯一的消息ID
         message_id = Utils.safe_code(8)
@@ -417,13 +475,28 @@ class Endpoint:
         else:
             data_bytes = json.dumps({"data": str(data)}).encode('utf-8')
             
-        self.pipe.send(data_bytes, {
+        # 获取发送任务的extension标识符
+        mission_extension = self.pipe.send(data_bytes, {
             'route': route,
             'message_id': message_id
         })
 
+        # 如果返回的extension与message_id不同，说明是大数据任务
+        # 存储它们之间的映射关系
+        if mission_extension != message_id:
+            with self.lock:
+                self.extension_to_message[mission_extension] = message_id
+        
         if blocking_recv:
             return self._blocking_recv(message_id)
+        
+        # 如果mission_extension不是message_id，说明是大数据任务
+        # 返回包含message_id和mission_extension的字典，以便用户可以取消任务
+        if mission_extension != message_id:
+            return {
+                'message_id': message_id,
+                'mission_extension': mission_extension
+            }
         
         return message_id
     
@@ -505,5 +578,30 @@ class Endpoint:
             self.routes[route] = handler
         logger.info(f"Endpoint registered blueprint '{blueprint.name}' with {len(blueprint.routes)} routes")
         return self  # 返回self以支持链式调用
+        
+    def cancel_mission(self, extension: str) -> bool:
+        """Cancel a specific transmission task.
+        
+        Removes the task from the send queue and sends a cancellation message to the remote endpoint.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+            
+        Returns:
+            bool: True if the task was found and canceled, False otherwise
+        """
+        # 使用锁保护取消操作
+        with self.lock:
+            # 调用底层pipe的cancel_mission方法
+            result = self.pipe.cancel_mission(extension)
+            
+            if result:
+                # 如果取消成功，触发任务取消事件
+                self.event.emit('mission_canceled', extension)
+                logger.info(f"Endpoint canceled mission: {extension}")
+            else:
+                logger.warning(f"Endpoint failed to cancel mission: {extension}")
+            
+            return result
         
         

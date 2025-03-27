@@ -783,6 +783,24 @@ class Pipe:
         self.recv_exception = False
 
         self.final_error_handler: Callable = None
+        self.cancel_handler: Callable[[str], None] = self._cancel_handler
+        self.mission_complete_handler: Callable[[str], None] = self._mission_complete_handler
+    
+    def _mission_complete_handler(self, extension: str) -> None:
+        """Handle mission completion.
+        
+        Args:
+            extension: The extension identifier of the task that has completed
+        """
+        pass
+
+    def _cancel_handler(self, extension: str) -> None:
+        """Handle mission cancellation.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+        """
+        pass
     
     def _recv(self) -> tuple[LsoProtocol, dict]:
         """Receive a complete LSO protocol data packet.
@@ -881,6 +899,7 @@ class Pipe:
                             logger.info(f'{extension} mission completed. size: {info["length"]}')
                             self.send_pool.pop(extension)
                             self.misson_info.pop(extension)
+                            self.mission_complete_handler(extension)
                         continue
                     
                     data = queue.get()
@@ -930,6 +949,7 @@ class Pipe:
                             self.recv_pool.pop(extension, None)
                             self.recv_info.pop(extension, None)
                             logger.info(f"Removed completed task {extension} due to cancellation")
+                    self.cancel_handler(extension)
                     continue
                 
                 # Handle task data
@@ -990,7 +1010,7 @@ class Pipe:
         if message == 'close':
             logger.info('Pipe closed.')
     
-    def send(self, data:bytes, info:dict={}):
+    def send(self, data:bytes, info:dict={}) -> str:
         """Send data and related information.
         
         Simplified version of create_mission, for quick data sending.
@@ -998,8 +1018,11 @@ class Pipe:
         Args:
             data: Byte data to send
             info: Metadata related to the data
+            
+        Returns:
+            str: The mission's extension identifier
         """
-        self.create_mission(data, info)
+        return self.create_mission(data, info)
     
     def recv(self) -> tuple[bytes, dict]:
         """Receive data and related information.
