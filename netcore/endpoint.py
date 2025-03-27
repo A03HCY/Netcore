@@ -604,4 +604,3 @@ class Endpoint:
             
             return result
         
-        

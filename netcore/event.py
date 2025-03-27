@@ -23,6 +23,7 @@ class EventEmitter:
         """
         # 如果没有提供handler，返回一个装饰器函数
         if handler is None:
+            logger.info(f"Subscribing to event '{event}' with decorator")
             def decorator(func):
                 if event not in self._events:
                     self._events[event] = []
@@ -33,6 +34,7 @@ class EventEmitter:
         # 常规调用方式
         if event not in self._events:
             self._events[event] = []
+        logger.info(f"Subscribing to event '{event}' with handler: {handler}")
         self._events[event].append(handler)
         return self
     
@@ -48,6 +50,7 @@ class EventEmitter:
         """
         # 如果没有提供handler，返回一个装饰器函数
         if handler is None:
+            logger.info(f"Subscribing to one-time event '{event}' with decorator")
             def decorator(func):
                 if event not in self._once_events:
                     self._once_events[event] = []
@@ -58,6 +61,7 @@ class EventEmitter:
         # 常规调用方式
         if event not in self._once_events:
             self._once_events[event] = []
+        logger.info(f"Subscribing to one-time event '{event}' with handler: {handler}")
         self._once_events[event].append(handler)
         return self
     
@@ -68,6 +72,7 @@ class EventEmitter:
             event: Event name
             handler: Optional specific handler to remove, if not specified removes all handlers
         """
+        logger.info(f"Unsubscribing from event '{event}' with handler: {handler}")
         if handler is None:
             self._events.pop(event, None)
             self._once_events.pop(event, None)
@@ -85,6 +90,7 @@ class EventEmitter:
             event: Event name
             *args, **kwargs: Parameters to pass to the handler functions
         """
+        logger.info(f"Emitting event '{event}' with args: {args} and kwargs: {kwargs}")
         # 处理普通事件
         if event in self._events:
             for handler in self._events[event]:

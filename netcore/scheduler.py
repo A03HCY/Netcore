@@ -20,6 +20,7 @@ class Scheduler:
         self._running = False
         self._thread = None
         self._lock = threading.Lock()
+        logger.info("Scheduler initialized")
     
     def _run(self):
         """Run the scheduler main loop.
@@ -34,6 +35,7 @@ class Scheduler:
                     _, task, interval = heapq.heappop(self._tasks)
                     try:
                         task()
+                        logger.info(f"Executed scheduled task: {task}")
                         if interval:  # 如果是周期性任务，重新加入队列
                             next_time = now + timedelta(seconds=interval)
                             heapq.heappush(self._tasks, (next_time, task, interval))
@@ -54,6 +56,7 @@ class Scheduler:
         self._thread = threading.Thread(target=self._run)
         self._thread.daemon = True
         self._thread.start()
+        logger.info("Scheduler started")
     
     def stop(self):
         """Stop the scheduler.
@@ -63,6 +66,7 @@ class Scheduler:
         self._running = False
         if self._thread:
             self._thread.join()
+        logger.info("Scheduler stopped")
     
     def schedule(self, task: Callable, delay: float = 0, interval: Optional[float] = None):
         """Schedule a task for execution.
