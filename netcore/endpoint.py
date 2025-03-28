@@ -108,6 +108,77 @@ class Response:
             return str(self.data).encode('utf-8')
 
 
+class MultiPipe:
+    def __init__(self):
+        self.pipe_pool: Dict[str, Pipe] = {}
+        self.pipe_info: Dict[str, dict] = {}
+        self.pipe_lock = threading.RLock()
+        self.info_lock = threading.RLock()
+            
+        self.final_error_handler: Callable = None
+        self.cancel_handler: Callable[[str], None] = self._cancel_handler
+        self.mission_complete_handler: Callable[[str], None] = self._mission_complete_handler
+    
+    def __call__(self, safe_code: str) -> Pipe:
+        return self.get_pipe(safe_code)[0]
+
+    def add_pipe(self, pipe: Pipe):
+        safe_code = Utils.safe_code(6)
+        with self.pipe_lock:
+            self.pipe_pool[safe_code] = pipe
+        with self.info_lock:
+            self.pipe_info[safe_code] = {
+                'running': False,
+            }
+    
+    def get_pipe(self, safe_code: str) -> Tuple[Pipe, dict]:
+        with self.info_lock:
+            info = self.pipe_info.get(safe_code, None)
+        with self.pipe_lock:
+            return self.pipe_pool.get(safe_code, None), info
+            
+    def remove_pipe(self, safe_code: str) -> bool:
+        with self.pipe_lock:
+            if safe_code in self.pipe_pool:
+                del self.pipe_pool[safe_code]
+                return True
+            return False
+        with self.info_lock:
+            if safe_code in self.pipe_info:
+                del self.pipe_info[safe_code]
+    
+    def clear(self):
+        with self.pipe_lock:
+            self.pipe_pool.clear()
+        with self.info_lock:
+            self.pipe_info.clear()
+    
+    def start(self):
+        with self.pipe_lock:
+            with self.info_lock:
+                for pipe in self.pipe_pool.values():
+                    pipe.final_error_handler = self.final_error_handler
+                    pipe.cancel_handler = self.cancel_handler
+                    pipe.mission_complete_handler = self.mission_complete_handler
+                    pipe.start()
+                    self.pipe_info[pipe.safe_code]['running'] = True
+
+    def _mission_complete_handler(self, extension: str) -> None:
+        """Handle mission completion.
+        
+        Args:
+            extension: The extension identifier of the task that has completed
+        """
+        pass
+
+    def _cancel_handler(self, extension: str) -> None:
+        """Handle mission cancellation.
+        
+        Args:
+            extension: The extension identifier of the task to cancel
+        """
+        pass
+
 
 class Endpoint:
     """Endpoint class for handling network communication.
