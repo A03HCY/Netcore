@@ -48,10 +48,10 @@ def clean_build_dirs():
     """清理构建目录"""
     dirs_to_clean = ['build', 'dist', 'netcore.egg-info']
     
-    with console.status("[bold blue]清理构建目录...") as status:
+    with console.status("[bold cyan]清理构建目录...") as status:
         for dir_name in dirs_to_clean:
             if os.path.exists(dir_name):
-                status.update(f"[bold blue]删除 {dir_name}/")
+                status.update(f"[bold cyan]删除 {dir_name}/")
                 shutil.rmtree(dir_name)
                 time.sleep(0.3)  # 添加短暂延迟以便看到状态变化
 
@@ -62,21 +62,21 @@ def build_package():
     
     with Progress(
         SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}"),
+        TextColumn("[bold cyan]{task.description}"),
         BarColumn(),
         TimeElapsedColumn(),
         console=console,
         transient=True
     ) as progress:
-        build_task = progress.add_task("[bold blue]构建netcore包", total=100)
+        build_task = progress.add_task("[bold cyan]构建netcore包", total=100)
         
         try:
             # 更新进度和描述
-            progress.update(build_task, advance=10, description="[bold blue]准备构建环境")
+            progress.update(build_task, advance=10, description="[bold cyan]准备构建环境")
             time.sleep(0.5)
             
             # 构建源码包
-            progress.update(build_task, advance=20, description="[bold blue]构建源码分发包 (tar.gz)")
+            progress.update(build_task, advance=20, description="[bold cyan]构建源码分发包 (tar.gz)")
             subprocess.check_call(
                 [sys.executable, "setup.py", "sdist"],
                 stdout=DEVNULL,
@@ -85,7 +85,7 @@ def build_package():
             time.sleep(0.5)
             
             # 构建轮子包
-            progress.update(build_task, advance=40, description="[bold blue]构建轮子分发包 (whl)")
+            progress.update(build_task, advance=40, description="[bold cyan]构建轮子分发包 (whl)")
             subprocess.check_call(
                 [sys.executable, "setup.py", "bdist_wheel"],
                 stdout=DEVNULL,
@@ -93,7 +93,7 @@ def build_package():
             )
             
             # 完成 - 修复了空格问题
-            progress.update(build_task, advance=30, description="[bold blue]构建完成!")
+            progress.update(build_task, advance=30, description="[bold cyan]构建完成!")
             
             # 添加一个小延迟，确保进度条完成
             time.sleep(0.5)
@@ -103,7 +103,7 @@ def build_package():
 
 def install_package():
     """安装构建好的包"""
-    console.print("\n[bold blue]正在安装netcore包...[/bold blue]")
+    console.print("\n[bold cyan]正在安装netcore包...[/bold cyan]")
     
     # 查找最新的wheel文件
     if not os.path.exists('dist'):
@@ -121,7 +121,7 @@ def install_package():
                         reverse=True)[0]
     whl_path = os.path.join('dist', latest_whl)
     
-    with console.status(f"[bold blue]安装 {latest_whl}...") as status:
+    with console.status(f"[bold cyan]安装 {latest_whl}...") as status:
         try:
             # 使用pip安装wheel包，可能需要使用--force-reinstall以确保更新
             subprocess.check_call(
@@ -137,7 +137,6 @@ def install_package():
 
 def check_package():
     """检查构建的包"""
-    console.print("\n[bold blue]检查构建结果...", style="bold blue")
     
     if not os.path.exists('dist'):
         console.print("[bold red]错误: 没有找到dist目录，构建可能失败[/bold red]")
@@ -178,7 +177,7 @@ def main():
     version = get_version()
     
     # 使用分割线显示标题
-    console.rule(f"[bold blue]Netcore 构建脚本 v{version}[/bold blue]")
+    console.rule(f"[bold cyan]Netcore 构建脚本 v{version}[/bold cyan]")
     
     try:
         # 清理旧的构建目录
@@ -197,25 +196,8 @@ def main():
             if args.install:
                 install_success = install_package()
                 if install_success:
-                    console.print("\n[bold blue]您可以现在导入netcore库进行测试。[/bold blue]")
+                    console.print("\n[bold cyan]您可以现在导入netcore库进行测试。[/bold cyan]")
             
-            # 显示可用的上传命令
-            upload_panel = Panel(
-                "[yellow]python -m twine upload dist/*[/yellow]",
-                title="上传到PyPI",
-                subtitle="需要PyPI账户",
-                border_style="green"
-            )
-            test_panel = Panel(
-                "[yellow]python -m twine upload --repository-url https://test.pypi.org/legacy/ dist/*[/yellow]",
-                title="上传到测试PyPI",
-                subtitle="用于测试",
-                border_style="blue"
-            )
-            
-            console.print("\n[bold]若要发布包，可以使用以下命令:[/bold]")
-            console.print(upload_panel)
-            console.print(test_panel)
         else:
             console.print("\n[bold yellow]⚠️ 构建可能不完整，请检查上面的警告。[/bold yellow]")
             
