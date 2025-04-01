@@ -251,14 +251,14 @@ class MultiPipe:
         return self.get_pipe(safe_code)[0]
 
     def add_pipe(self, pipe: Pipe, safe_code: str = None):
-        """添加一个管道到管道池
+        """Add a pipe to the pipe pool.
         
         Args:
-            pipe: 要添加的管道对象
-            safe_code: 可选的安全码，如果不提供则自动生成
+            pipe: The pipe object to add
+            safe_code: Optional safe code, auto-generated if not provided
         
         Returns:
-            str: 管道的安全码
+            str: Safe code for the pipe
         """
         if safe_code is None:
             safe_code = Utils.safe_code(6)
@@ -279,13 +279,13 @@ class MultiPipe:
         return safe_code
     
     def get_pipe(self, safe_code: str) -> Tuple[Pipe, dict]:
-        """获取指定安全码的管道和信息
+        """Get pipe and info for the specified safe code.
         
         Args:
-            safe_code: 管道的安全码
+            safe_code: Safe code of the pipe
             
         Returns:
-            Tuple[Pipe, dict]: 管道对象和管道信息
+            Tuple[Pipe, dict]: Pipe object and pipe info
         """
         with self.info_lock:
             info = self.pipe_info.get(safe_code, None)
@@ -293,13 +293,13 @@ class MultiPipe:
             return self.pipe_pool.get(safe_code, None), info
             
     def remove_pipe(self, safe_code: str) -> bool:
-        """移除指定安全码的管道
+        """Remove pipe with the specified safe code.
         
         Args:
-            safe_code: 管道的安全码
+            safe_code: Safe code of the pipe to remove
             
         Returns:
-            bool: 是否成功移除
+            bool: Whether removal was successful
         """
         with self.pipe_lock:
             if safe_code in self.pipe_pool:
@@ -323,7 +323,7 @@ class MultiPipe:
         return False
     
     def clear(self):
-        """清空所有管道"""
+        """Clear all pipes from the pool."""
         # 停止所有管道
         with self.pipe_lock:
             for pipe in self.pipe_pool.values():
@@ -340,7 +340,7 @@ class MultiPipe:
         self.recv_threads.clear()
     
     def start(self):
-        """启动所有管道"""
+        """Start all pipes in the pool."""
         self.running = True
         
         with self.pipe_lock:
@@ -358,7 +358,7 @@ class MultiPipe:
                     self._start_recv_thread(safe_code, pipe)
     
     def stop(self):
-        """停止所有管道"""
+        """Stop all pipes in the pool."""
         self.running = False
         
         # 停止所有管道
@@ -375,11 +375,11 @@ class MultiPipe:
                 thread.join(timeout=1.0)
     
     def _start_recv_thread(self, safe_code, pipe):
-        """为指定管道启动接收线程
+        """Start a receive thread for the specified pipe.
         
         Args:
-            safe_code: 管道的安全码
-            pipe: 管道对象
+            safe_code: Safe code of the pipe
+            pipe: Pipe object
         """
         thread = threading.Thread(
             target=self._pipe_recv_thread,
@@ -390,13 +390,13 @@ class MultiPipe:
         self.recv_threads[safe_code] = thread
     
     def _pipe_recv_thread(self, safe_code, pipe):
-        """管道接收线程函数
+        """Pipe receive thread function.
         
-        从指定管道接收数据并放入接收队列
+        Receives data from the specified pipe and puts it into the receive queue.
         
         Args:
-            safe_code: 管道的安全码
-            pipe: 管道对象
+            safe_code: Safe code of the pipe
+            pipe: Pipe object
         """
         try:
             while self.running:
@@ -421,26 +421,26 @@ class MultiPipe:
             self._recv_exception = e
     
     def _mission_complete_handler(self, extension: str) -> None:
-        """任务完成处理器
+        """Mission complete handler.
         
         Args:
-            extension: 任务标识符
+            extension: Task identifier
         """
         pass
 
     def _cancel_handler(self, extension: str) -> None:
-        """任务取消处理器
+        """Mission cancel handler.
         
         Args:
-            extension: 任务标识符
+            extension: Task identifier
         """
         pass
     
     def recv(self):
-        """从接收队列中获取数据
+        """Receive data from the queue.
         
         Returns:
-            Tuple[bytes, dict]: 接收到的数据和信息
+            Tuple[bytes, dict]: Received data and info
         """
         try:
             return self.recv_queue.get(block=False)
@@ -448,15 +448,15 @@ class MultiPipe:
             return None, None
     
     def send(self, data, info, safe_code=None):
-        """发送数据到指定管道
+        """Send data through a specified pipe.
         
         Args:
-            data: 要发送的数据
-            info: 关联的信息
-            safe_code: 指定的管道安全码，如果不提供则使用第一个可用管道
+            data: Data to send
+            info: Associated info
+            safe_code: Optional safe code for the pipe, uses first available if not provided
             
         Returns:
-            str: 任务标识符
+            str: Task identifier
         """
         if safe_code is not None:
             with self.pipe_lock:
@@ -479,14 +479,14 @@ class MultiPipe:
                 return pipe.send(data, info)
     
     def cancel_mission(self, extension, safe_code=None):
-        """取消指定任务
+        """Cancel a specific task.
         
         Args:
-            extension: 任务标识符
-            safe_code: 指定的管道安全码，如果不提供则在所有管道中搜索
+            extension: Task identifier
+            safe_code: Optional safe code for the pipe, searches all pipes if not provided
             
         Returns:
-            bool: 是否成功取消
+            bool: Whether cancellation was successful
         """
         if safe_code is not None:
             with self.pipe_lock:
@@ -506,19 +506,19 @@ class MultiPipe:
     
     @property
     def is_data(self):
-        """检查是否有数据可用
+        """Check if data is available.
         
         Returns:
-            bool: 是否有数据可用
+            bool: Whether data is available
         """
         return not self.recv_queue.empty()
     
     @property
     def recv_exception(self):
-        """获取接收异常
+        """Get receive exception.
         
         Returns:
-            Exception: 接收过程中的异常
+            Exception: Exception encountered during receiving
         """
         return self._recv_exception
 
