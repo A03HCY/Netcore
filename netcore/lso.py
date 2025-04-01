@@ -754,8 +754,8 @@ class Pipe:
             recv_function: Function to receive data, accepts an optional integer parameter (number of bytes to read)
             send_function: Function to send data, accepts a bytes parameter (data to send)
         """
-        if not Utils.accepts_single_argument(recv_function):
-            recv_function = RecvWrapper(recv_function)
+        # if not Utils.accepts_single_argument(recv_function):
+        #     recv_function = RecvWrapper(recv_function)
         self.recv_function = recv_function  # 接收数据的函数
         self.send_function = send_function  # 发送数据的函数
         # 任务头队列，优先发送
@@ -848,13 +848,13 @@ class Pipe:
             self.misson_info[extension] = {
                 'length': len(data)
             }
-            # 保存任务到待发送队列
-            self.mission_head.put({
-                'extension': extension,
-                'length': len(data),
-                'info': info,
-            })
-            return extension
+        # 保存任务到待发送队列
+        self.mission_head.put({
+            'extension': extension,
+            'length': len(data),
+            'info': info,
+        })
+        return extension
     
     def _send_thread(self):
         """Main function of the send thread.
@@ -1010,7 +1010,7 @@ class Pipe:
         if message == 'close':
             logger.info('Pipe closed.')
     
-    def send(self, data:bytes, info:dict={}) -> str:
+    def send(self, data:bytes, info:dict={}, **kwargs) -> str:
         """Send data and related information.
         
         Simplified version of create_mission, for quick data sending.
@@ -1090,3 +1090,9 @@ class Pipe:
             except Exception as e:
                 logger.error(f"Error scheduling cancellation message for {extension}: {e}")
                 return False
+
+    def stop(self):
+        """Stop the pipe's threads and release resources."""
+        # 这里实际上无法安全地停止线程，只能通过异常退出
+        # 可以通过设置标志位并让线程自己检查退出
+        self.recv_exception = True
