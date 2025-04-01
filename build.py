@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import os
 import sys
 import shutil
@@ -9,11 +6,10 @@ import time
 import importlib.util
 import argparse
 
-from rich.console import Console
-from rich.panel import Panel
+from rich.console  import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from rich.table import Table
-from rich import box
+from rich.table    import Table
+from rich          import box
 
 # 设置一个环境变量标志，防止递归调用
 if os.environ.get('NETCORE_BUILDING') == '1':

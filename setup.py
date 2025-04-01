@@ -5,7 +5,7 @@ with open("README.md", "r", encoding='utf-8') as fh:
 
 setuptools.setup(
     name="netcore",
-    version="0.1.3-alpha-1",
+    version="0.1.3-alpha-3",
     author="Aiden Hopkins",
     author_email="acdphc@qq.com",
     description="A Network Protocol Framework",
