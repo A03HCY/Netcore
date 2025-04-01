@@ -12,7 +12,7 @@ endpoint = Endpoint(pipe)
 # Start client (non-blocking)
 endpoint.start(block=False)
 
-# Send multiple messages concurrently
-print(endpoint.send('message1', {"data": "First message"}, blocking_recv=True))
-print(endpoint.send('message2', {"data": "Second message"}, blocking_recv=True))
-# Both messages will be processed concurrently
+# Get server's pipe safe_code
+safe_code = endpoint.send('info', {"data": "safe_code"}, blocking_recv=True)
+print('Assigned safe_code:', safe_code.json['safe_code'])
+

@@ -34,7 +34,8 @@ class Blueprint:
     def request(self, route: str):
         """Route decorator, used to register functions for handling different routes.
         
-        Maintains consistent naming and usage pattern with Endpoint.request
+        Simply stores the handler function with its route in the routes dictionary.
+        The actual wrapping will be done when registered to an Endpoint.
         
         Args:
             route: Route path without prefix
@@ -43,41 +44,11 @@ class Blueprint:
             Decorator function
         """
         def decorator(func):
-            @functools.wraps(func)
-            def wrapper():
-                try:
-                    # 执行请求前钩子
-                    for before_func in self.before_request_funcs:
-                        before_result = before_func()
-                        if before_result is not None:
-                            return before_result
-                    
-                    # 执行中间件链
-                    handler = func
-                    for middleware in reversed(self.middlewares):
-                        handler = middleware(handler)
-                    
-                    # 执行实际处理函数
-                    result = handler()
-                    
-                    # 执行请求后钩子
-                    for after_func in self.after_request_funcs:
-                        after_result = after_func(result)
-                        if after_result is not None:
-                            result = after_result
-                    
-                    return result
-                except Exception as e:
-                    # 执行错误处理
-                    if self.error_handler:
-                        return self.error_handler(e)
-                    raise  # 如果没有错误处理器，重新抛出异常
-            
             full_route = f"{self.prefix}{route}"
-            self.routes[full_route] = wrapper
+            self.routes[full_route] = func
             logger.debug(f"Blueprint '{self.name}' registered route '{full_route}'")
             return func
-        return decorator 
+        return decorator
 
     def middleware(self, func):
         """Middleware decorator.

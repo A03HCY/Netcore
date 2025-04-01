@@ -754,8 +754,8 @@ class Pipe:
             recv_function: Function to receive data, accepts an optional integer parameter (number of bytes to read)
             send_function: Function to send data, accepts a bytes parameter (data to send)
         """
-        if not Utils.accepts_single_argument(recv_function):
-            recv_function = RecvWrapper(recv_function)
+        # if not Utils.accepts_single_argument(recv_function):
+        #     recv_function = RecvWrapper(recv_function)
         self.recv_function = recv_function  # 接收数据的函数
         self.send_function = send_function  # 发送数据的函数
         # 任务头队列，优先发送
