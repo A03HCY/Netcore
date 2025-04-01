@@ -12,6 +12,7 @@ Netcore is a lightweight communication framework specifically designed for **con
 • **Single-connection multiplexing**: Implements logically concurrent message streams on a single physical connection
 • **Intelligent chunk scheduling**: Automatically splits large messages into chunks for interleaved transmission, maximizing bandwidth utilization
 • **Non-blocking I/O**: Decouples message transmission from business processing to ensure system responsiveness
+• **Multi-pipe support**: Manages multiple communication pipes through MultiPipe, enabling multi-client concurrent connections
 
 ### 📦 Protocol & Transport
 • **Adaptive protocol layer**:
@@ -75,6 +76,36 @@ def handle_sensor():
 endpoint.start()
 ```
 
+### Multi-Client Example
+```python
+from netcore import Endpoint, Pipe, MultiPipe
+import socket
+
+# Create multi-pipe object
+multi_pipe = MultiPipe()
+endpoint = Endpoint(multi_pipe)
+
+# Handle new client connections
+def on_new_client(client_socket, addr):
+    # Create and add new pipe
+    pipe = Pipe(client_socket.recv, client_socket.send)
+    safe_code = multi_pipe.add_pipe(pipe)
+    print(f"Client {addr} connected with safe code: {safe_code}")
+
+# Start server listening
+server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+server.bind(('0.0.0.0', 8080))
+server.listen(5)
+
+# Start endpoint
+endpoint.start(block=False)
+
+# Accept new connections
+while True:
+    client, addr = server.accept()
+    on_new_client(client, addr)
+```
+
 ## Architecture Overview
 
 1. **Application Layer (Endpoint)**  
@@ -83,11 +114,12 @@ endpoint.start()
    • Task system: Manages scheduled tasks and priority queues
    • Cache system: Provides thread-safe LRU caching
 
-2. **Transport Layer (Pipe)**  
+2. **Transport Layer (Pipe/MultiPipe)**  
    • Send queue: Implements priority task queue management
    • Receive pool: Maintains temporary and complete message storage
    • Thread locks: Ensures thread-safe access to shared resources
    • Protocol integration: Deep integration with LsoProtocol for chunked transmission
+   • Multi-pipe management: Supports multi-client concurrent connections
 
 3. **Protocol Layer (LsoProtocol)**  
    • Intelligent chunking: Auto-selects memory/file storage based on data type
