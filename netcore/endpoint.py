@@ -548,7 +548,6 @@ class Endpoint:
         
         self.blocking_recv: Dict[str, Request] = {}  # 阻塞收消息
 
-        # 新增功能
         self.middlewares: List[Callable] = []  # 中间件列表
         self.error_handler = None  # 错误处理器
         self.before_request_funcs: List[Callable] = []  # 请求前钩子
@@ -595,20 +594,21 @@ class Endpoint:
                         if before_result is not None:
                             return before_result
                     
+                    print(self.middlewares)
                     # 执行中间件链
                     handler = func
-                    for middleware in reversed(self.middlewares):
+                    for middleware in self.middlewares:
+                        print('Middleware:', middleware)
                         handler = middleware(handler)
                     
                     # 执行实际处理函数
                     result = handler()
-                    
+
                     # 执行请求后钩子
                     for after_func in self.after_request_funcs:
                         after_result = after_func(result)
                         if after_result is not None:
                             result = after_result
-                    
                     return result
                 except Exception as e:
                     # 执行错误处理
@@ -727,9 +727,6 @@ class Endpoint:
                 break
                 
             data, info = task
-            
-            # 获取pipe_safe_code（如果使用MultiPipe）
-            pipe_safe_code = info.get('pipe_safe_code', None)
             
             # 创建线程本地的请求对象
             thread_request = Request(data, info)
@@ -996,13 +993,14 @@ class Endpoint:
         """
         self.pipe.start()
         self.running = True
-        self.scheduler.start()  # 启动调度器
+        # 触发启动事件
+        self.scheduler.start()
+        # 触发启动事件
+        self.event.emit('start')
         self.handler_thread = threading.Thread(target=self._handle_requests)
         self.handler_thread.daemon = True
         self.handler_thread.start()
         
-        # 触发启动事件
-        self.event.emit('start')
         
         if block:
             self.handler_thread.join()
@@ -1036,13 +1034,67 @@ class Endpoint:
         Returns:
             self: The endpoint instance for chaining
         """
+        # 先注册蓝图的中间件和钩子
+        for middleware in blueprint.middlewares:
+            if middleware not in self.middlewares:
+                self.middlewares.append(middleware)
+                logger.debug(f"Blueprint '{blueprint.name}' added middleware '{middleware.__name__}'")
+
+        for hook in blueprint.before_request_funcs:
+            if hook not in self.before_request_funcs:
+                self.before_request_funcs.append(hook)
+                logger.debug(f"Blueprint '{blueprint.name}' added before request hook '{hook.__name__}'")
+        
+        for hook in blueprint.after_request_funcs:
+            if hook not in self.after_request_funcs:
+                self.after_request_funcs.append(hook)
+                logger.debug(f"Blueprint '{blueprint.name}' added after request hook '{hook.__name__}'")
+        
+        # 如果蓝图有错误处理器且端点没有，也注册它
+        if blueprint.error_handler and not self.error_handler:
+            self.error_handler = blueprint.error_handler
+            logger.debug(f"Blueprint '{blueprint.name}' set error handler '{blueprint.error_handler.__name__}'")
+        
+        # 注册路由处理函数
         for route, handler in blueprint.routes.items():
             if route == f"{blueprint.prefix}/__default__":
                 # 特殊处理默认路由
                 if not self.default_handler:
                     self.default_handler = handler
                 continue
-            self.routes[route] = handler
+            
+            # 为每个路由创建包装器，使用endpoint的机制来包装函数
+            @functools.wraps(handler)
+            def wrapper():
+                try:
+                    # 执行请求前钩子
+                    for before_func in self.before_request_funcs:
+                        before_result = before_func()
+                        if before_result is not None:
+                            return before_result
+                    
+                    # 执行中间件链
+                    route_handler = handler
+                    for middleware in self.middlewares:
+                        route_handler = middleware(route_handler)
+                    
+                    # 执行实际处理函数
+                    result = route_handler()
+                    
+                    # 执行请求后钩子
+                    for after_func in self.after_request_funcs:
+                        after_result = after_func(result)
+                        if after_result is not None:
+                            result = after_result
+                    return result
+                except Exception as e:
+                    # 执行错误处理
+                    if self.error_handler:
+                        return self.error_handler(e)
+                    raise EndpointMiddlewareError('Endpoint middleware error', e)
+            
+            self.routes[route] = wrapper
+        
         logger.info(f"Endpoint registered blueprint '{blueprint.name}' with {len(blueprint.routes)} routes")
         return self  # 返回self以支持链式调用
         
