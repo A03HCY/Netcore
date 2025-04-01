@@ -23,25 +23,142 @@ class Request:
     """Request object class for accessing request information.
     
     Encapsulates the request data and provides convenient access to
-    different formats of the request data.
+    different formats of the request data. Supports JSON and string parsing,
+    header information, and pipe source tracking for MultiPipe environments.
+    
+    Attributes:
+        meta (bytes): Raw binary data of the request
+        route (str): The request route or path
+        message_id (str): Unique identifier for the request/response
+        is_response (bool): Whether this request is a response to another request
+        is_cancel (bool): Whether this request is a cancellation notification
+        json (dict): Request data parsed as JSON (empty dict if invalid)
+        string (str): Request data decoded as UTF-8 string (empty string if invalid)
     """
     
     def __init__(self, meta: bytes = None, info: dict = None):
-        self.meta = meta if isinstance(meta, bytes) else bytes(meta)
+        """Initialize a Request object.
+        
+        Args:
+            meta: Raw binary data of the request
+            info: Dictionary with request metadata/headers
+        """
+        info = info or {}
+        self.meta = meta if isinstance(meta, bytes) else bytes(meta or b'')
         self.json = None
         self.string = None
         self.route = info.get('route', '')
         self.message_id = info.get('message_id', '')
+        self._pipe_safe_code = info.get('pipe_safe_code', None)
         self.is_response = info.get('is_response', False)
         self.is_cancel = info.get('is_cancel', False)
+        self._headers = {k: v for k, v in info.items() 
+                        if k not in ['route', 'message_id', 'pipe_safe_code', 
+                                    'is_response', 'is_cancel']}
+        self._parse()
+    
+    def _parse(self):
+        """Parse the raw data into different formats."""
+        # 解析JSON
         try:
             self.json = json.loads(self.meta)
-        except:
+        except (json.JSONDecodeError, TypeError, ValueError):
             self.json = {}
+            
+        # 解析字符串
         try:
             self.string = self.meta.decode('utf-8')
-        except:
+        except (UnicodeDecodeError, AttributeError):
             self.string = ''
+    
+    @property
+    def pipe_safe_code(self):
+        """Get the pipe safe code that identifies the source pipe in MultiPipe setup.
+        
+        Returns:
+            str: The pipe safe code or None if not available
+        """
+        return self._pipe_safe_code
+    
+    @property
+    def headers(self):
+        """Get all request headers/metadata.
+        
+        Returns:
+            dict: All headers not handled as special attributes
+        """
+        return self._headers
+    
+    def get_header(self, key, default=None):
+        """Get a specific header value.
+        
+        Args:
+            key: Header key to retrieve
+            default: Default value if key doesn't exist
+            
+        Returns:
+            Value of the header or default if not found
+        """
+        return self._headers.get(key, default)
+    
+    def get_json(self, key=None, default=None):
+        """Get JSON data or a specific field from JSON data.
+        
+        Args:
+            key: Specific JSON key to retrieve (optional)
+            default: Default value if key doesn't exist
+            
+        Returns:
+            The entire JSON dict if key is None, or the value for the specific key
+        """
+        if key is None:
+            return self.json
+        return self.json.get(key, default) if isinstance(self.json, dict) else default
+    
+    def __str__(self):
+        """String representation of the request.
+        
+        Returns:
+            str: A summary of the request including route and message ID
+        """
+        type_str = "Response" if self.is_response else "Request"
+        status = " (Cancelled)" if self.is_cancel else ""
+        return f"{type_str}{status}: route='{self.route}', message_id='{self.message_id}'"
+    
+    def __repr__(self):
+        """Developer representation of the request.
+        
+        Returns:
+            str: A detailed representation of the request for debugging
+        """
+        return (f"Request(route='{self.route}', message_id='{self.message_id}', "
+                f"is_response={self.is_response}, is_cancel={self.is_cancel}, "
+                f"pipe_safe_code={self._pipe_safe_code!r}, "
+                f"meta_length={len(self.meta)})")
+    
+    def size(self):
+        """Get the size of the request data.
+        
+        Returns:
+            int: Size of the request data in bytes
+        """
+        return len(self.meta)
+    
+    def is_json(self):
+        """Check if the request contains valid JSON data.
+        
+        Returns:
+            bool: True if the request contains valid JSON, False otherwise
+        """
+        return bool(self.json)
+    
+    def is_empty(self):
+        """Check if the request is empty.
+        
+        Returns:
+            bool: True if the request contains no data, False otherwise
+        """
+        return len(self.meta) == 0
 
 # 请求代理类 - 类似Flask的实现
 class RequestProxy:
@@ -109,6 +226,11 @@ class Response:
 
 
 class MultiPipe:
+    """MultiPipe class for managing multiple communication pipes.
+    
+    Allows an endpoint to communicate through multiple pipes simultaneously,
+    providing pipe pooling and management capabilities.
+    """
     def __init__(self):
         self.pipe_pool: Dict[str, Pipe] = {}
         self.pipe_info: Dict[str, dict] = {}
@@ -118,66 +240,287 @@ class MultiPipe:
         self.final_error_handler: Callable = None
         self.cancel_handler: Callable[[str], None] = self._cancel_handler
         self.mission_complete_handler: Callable[[str], None] = self._mission_complete_handler
+        
+        # 添加接收队列，用于存储来自所有管道的数据
+        self.recv_queue = queue.Queue()
+        self.recv_threads = {}
+        self.running = False
+        self._recv_exception = None
     
     def __call__(self, safe_code: str) -> Pipe:
         return self.get_pipe(safe_code)[0]
 
-    def add_pipe(self, pipe: Pipe):
-        safe_code = Utils.safe_code(6)
+    def add_pipe(self, pipe: Pipe, safe_code: str = None):
+        """添加一个管道到管道池
+        
+        Args:
+            pipe: 要添加的管道对象
+            safe_code: 可选的安全码，如果不提供则自动生成
+        
+        Returns:
+            str: 管道的安全码
+        """
+        if safe_code is None:
+            safe_code = Utils.safe_code(6)
+        
         with self.pipe_lock:
             self.pipe_pool[safe_code] = pipe
         with self.info_lock:
             self.pipe_info[safe_code] = {
                 'running': False,
+                'safe_code': safe_code
             }
+        
+        # 设置管道的处理器
+        pipe.final_error_handler = self.final_error_handler
+        pipe.cancel_handler = self.cancel_handler
+        pipe.mission_complete_handler = self.mission_complete_handler
+        
+        return safe_code
     
     def get_pipe(self, safe_code: str) -> Tuple[Pipe, dict]:
+        """获取指定安全码的管道和信息
+        
+        Args:
+            safe_code: 管道的安全码
+            
+        Returns:
+            Tuple[Pipe, dict]: 管道对象和管道信息
+        """
         with self.info_lock:
             info = self.pipe_info.get(safe_code, None)
         with self.pipe_lock:
             return self.pipe_pool.get(safe_code, None), info
             
     def remove_pipe(self, safe_code: str) -> bool:
+        """移除指定安全码的管道
+        
+        Args:
+            safe_code: 管道的安全码
+            
+        Returns:
+            bool: 是否成功移除
+        """
         with self.pipe_lock:
             if safe_code in self.pipe_pool:
-                del self.pipe_pool[safe_code]
-                return True
-            return False
+                pipe = self.pipe_pool.pop(safe_code)
+                # 停止管道
+                if pipe:
+                    try:
+                        pipe.stop()
+                    except:
+                        pass
+        
         with self.info_lock:
             if safe_code in self.pipe_info:
                 del self.pipe_info[safe_code]
+                return True
+        
+        # 停止接收线程
+        if safe_code in self.recv_threads:
+            self.recv_threads.pop(safe_code)
+        
+        return False
     
     def clear(self):
+        """清空所有管道"""
+        # 停止所有管道
         with self.pipe_lock:
+            for pipe in self.pipe_pool.values():
+                try:
+                    pipe.stop()
+                except:
+                    pass
             self.pipe_pool.clear()
+        
         with self.info_lock:
             self.pipe_info.clear()
+        
+        # 清空接收线程
+        self.recv_threads.clear()
     
     def start(self):
+        """启动所有管道"""
+        self.running = True
+        
         with self.pipe_lock:
             with self.info_lock:
-                for pipe in self.pipe_pool.values():
+                for safe_code, pipe in self.pipe_pool.items():
                     pipe.final_error_handler = self.final_error_handler
                     pipe.cancel_handler = self.cancel_handler
                     pipe.mission_complete_handler = self.mission_complete_handler
+                    
+                    # 启动管道
                     pipe.start()
-                    self.pipe_info[pipe.safe_code]['running'] = True
-
-    def _mission_complete_handler(self, extension: str) -> None:
-        """Handle mission completion.
+                    self.pipe_info[safe_code]['running'] = True
+                    
+                    # 为每个管道创建接收线程
+                    self._start_recv_thread(safe_code, pipe)
+    
+    def stop(self):
+        """停止所有管道"""
+        self.running = False
+        
+        # 停止所有管道
+        with self.pipe_lock:
+            for pipe in self.pipe_pool.values():
+                try:
+                    pipe.stop()
+                except:
+                    pass
+                
+        # 等待所有接收线程结束
+        for thread in self.recv_threads.values():
+            if thread and thread.is_alive():
+                thread.join(timeout=1.0)
+    
+    def _start_recv_thread(self, safe_code, pipe):
+        """为指定管道启动接收线程
         
         Args:
-            extension: The extension identifier of the task that has completed
+            safe_code: 管道的安全码
+            pipe: 管道对象
+        """
+        thread = threading.Thread(
+            target=self._pipe_recv_thread,
+            args=(safe_code, pipe),
+            daemon=True
+        )
+        thread.start()
+        self.recv_threads[safe_code] = thread
+    
+    def _pipe_recv_thread(self, safe_code, pipe):
+        """管道接收线程函数
+        
+        从指定管道接收数据并放入接收队列
+        
+        Args:
+            safe_code: 管道的安全码
+            pipe: 管道对象
+        """
+        try:
+            while self.running:
+                if not pipe.is_data:
+                    if pipe.recv_exception:
+                        logger.error(f"Pipe {safe_code} receive exception: {pipe.recv_exception}")
+                        self._recv_exception = pipe.recv_exception
+                        continue
+                    continue
+                
+                data, info = pipe.recv()
+                if not data or not info:
+                    continue
+                
+                # 将管道安全码添加到info中
+                info['pipe_safe_code'] = safe_code
+                
+                # 放入接收队列
+                self.recv_queue.put((data, info))
+        except Exception as e:
+            logger.error(f"Pipe {safe_code} thread error: {e}")
+            self._recv_exception = e
+    
+    def _mission_complete_handler(self, extension: str) -> None:
+        """任务完成处理器
+        
+        Args:
+            extension: 任务标识符
         """
         pass
 
     def _cancel_handler(self, extension: str) -> None:
-        """Handle mission cancellation.
+        """任务取消处理器
         
         Args:
-            extension: The extension identifier of the task to cancel
+            extension: 任务标识符
         """
         pass
+    
+    def recv(self):
+        """从接收队列中获取数据
+        
+        Returns:
+            Tuple[bytes, dict]: 接收到的数据和信息
+        """
+        try:
+            return self.recv_queue.get(block=False)
+        except queue.Empty:
+            return None, None
+    
+    def send(self, data, info, safe_code=None):
+        """发送数据到指定管道
+        
+        Args:
+            data: 要发送的数据
+            info: 关联的信息
+            safe_code: 指定的管道安全码，如果不提供则使用第一个可用管道
+            
+        Returns:
+            str: 任务标识符
+        """
+        if safe_code is not None:
+            with self.pipe_lock:
+                pipe = self.pipe_pool.get(safe_code)
+                if pipe:
+                    return pipe.send(data, info)
+                else:
+                    logger.error(f"Pipe with safe_code {safe_code} not found")
+                    return None
+        else:
+            # 使用第一个可用管道
+            with self.pipe_lock:
+                if not self.pipe_pool:
+                    logger.error("No pipes available")
+                    return None
+                
+                # 获取第一个管道
+                first_safe_code = next(iter(self.pipe_pool))
+                pipe = self.pipe_pool[first_safe_code]
+                return pipe.send(data, info)
+    
+    def cancel_mission(self, extension, safe_code=None):
+        """取消指定任务
+        
+        Args:
+            extension: 任务标识符
+            safe_code: 指定的管道安全码，如果不提供则在所有管道中搜索
+            
+        Returns:
+            bool: 是否成功取消
+        """
+        if safe_code is not None:
+            with self.pipe_lock:
+                pipe = self.pipe_pool.get(safe_code)
+                if pipe:
+                    return pipe.cancel_mission(extension)
+                else:
+                    logger.error(f"Pipe with safe_code {safe_code} not found")
+                    return False
+        else:
+            # 在所有管道中搜索并取消
+            with self.pipe_lock:
+                for pipe in self.pipe_pool.values():
+                    if pipe.cancel_mission(extension):
+                        return True
+                return False
+    
+    @property
+    def is_data(self):
+        """检查是否有数据可用
+        
+        Returns:
+            bool: 是否有数据可用
+        """
+        return not self.recv_queue.empty()
+    
+    @property
+    def recv_exception(self):
+        """获取接收异常
+        
+        Returns:
+            Exception: 接收过程中的异常
+        """
+        return self._recv_exception
 
 
 class Endpoint:
@@ -187,11 +530,11 @@ class Endpoint:
     Supports multithreaded request handling for increased performance.
     """
     
-    def __init__(self, pipe: Pipe, max_workers: int = 1):
+    def __init__(self, pipe: Pipe|MultiPipe, max_workers: int = 1):
         """Create an endpoint.
         
         Args:
-            pipe: Communication pipe
+            pipe: Communication pipe or MultiPipe instance
             max_workers: Number of worker threads, defaults to 1
         """
         self.pipe = pipe
@@ -223,6 +566,12 @@ class Endpoint:
         
         # 添加extension到message_id的映射，用于处理任务取消
         self.extension_to_message = {}
+        
+        # 添加message_id到pipe_safe_code的映射，用于支持MultiPipe
+        self.message_to_pipe = {}
+        
+        # 是否使用MultiPipe
+        self.is_multi_pipe = isinstance(pipe, MultiPipe)
     
     def request(self, route: str):
         """Route decorator for registering functions to handle different routes.
@@ -379,6 +728,9 @@ class Endpoint:
                 
             data, info = task
             
+            # 获取pipe_safe_code（如果使用MultiPipe）
+            pipe_safe_code = info.get('pipe_safe_code', None)
+            
             # 创建线程本地的请求对象
             thread_request = Request(data, info)
             set_request(thread_request)  # 设置线程本地请求对象
@@ -390,10 +742,18 @@ class Endpoint:
                     try:
                         self.response_handlers[message_id](thread_request)
                         del self.response_handlers[message_id]  # 处理完成后移除handler
+                        
+                        # 如果存在，清理message_id到pipe的映射
+                        if message_id in self.message_to_pipe:
+                            del self.message_to_pipe[message_id]
+                            
                         self.request_queue.task_done()
                         continue
                     except Exception as e:
                         logger.error(f"Error processing response ID '{message_id}': {e}")
+                        # 清理映射
+                        if message_id in self.message_to_pipe:
+                            del self.message_to_pipe[message_id]
                         self.request_queue.task_done()
                         continue
             
@@ -407,22 +767,14 @@ class Endpoint:
                     result = self.routes[route]()
                     
                     if isinstance(result, Response):
-                        # 发送响应
-                        self.pipe.send(result.to_bytes(), {
-                            'route': result.route,
-                            'is_response': True,
-                            'message_id': thread_request.message_id  # 返回相同的消息ID
-                        })
+                        # 发送响应，如果有pipe_safe_code，使用指定的pipe
+                        self._send_response_with_pipe(result, thread_request)
                 except Exception as e:
                     if self.error_handler:
                         try:
                             result = self.error_handler(e)
                             if isinstance(result, Response):
-                                self.pipe.send(result.to_bytes(), {
-                                    'route': result.route,
-                                    'is_response': True,
-                                    'message_id': thread_request.message_id
-                                })
+                                self._send_response_with_pipe(result, thread_request)
                         except Exception as e2:
                             logger.error(f"Error handler encountered an error: {e2}")
                     else:
@@ -449,6 +801,28 @@ class Endpoint:
                 self.event.emit('response', result)
                 
             self.request_queue.task_done()
+    
+    def _send_response_with_pipe(self, response, request):
+        """使用指定管道发送响应
+        
+        Args:
+            response: 响应对象
+            request: 请求对象
+            pipe_safe_code: 管道安全码
+        """
+        # 准备响应数据
+        data_bytes = response.to_bytes()
+        info = {
+            'route': response.route,
+            'is_response': True,
+            'message_id': request.message_id
+        }
+        
+        # 如果是MultiPipe且有pipe_safe_code，使用指定的pipe
+        if self.is_multi_pipe and request.pipe_safe_code:
+            self.pipe.send(data_bytes, info, request.pipe_safe_code)
+        else:
+            self.pipe.send(data_bytes, info)
 
     def _blocking_recv_save_data(self, request:Request):
         """Save received data for blocking receive operations."""
@@ -512,7 +886,7 @@ class Endpoint:
                 except Exception as e:
                     logger.error(f"Error notifying response handler about cancellation: {e}")
 
-    def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False) -> Union[str, Request, Dict[str, str]]:
+    def send(self, route: str, data: Any, callback: Callable = None, blocking_recv:bool=False, pipe_safe_code:str=None) -> Union[str, Request, Dict[str, str]]:
         """Send a request to the remote endpoint.
         
         Args:
@@ -520,6 +894,7 @@ class Endpoint:
             data: The request data
             callback: Optional response callback function that takes (data, info) parameters
             blocking_recv: If True, wait for and return the response
+            pipe_safe_code: Optional pipe safe code for MultiPipe
             
         Returns:
             str: Message ID if not blocking
@@ -535,6 +910,10 @@ class Endpoint:
                 self.response_handlers[message_id] = callback
             if blocking_recv == True:
                 self.response_handlers[message_id] = self._blocking_recv_save_data
+            
+            # 保存message_id到pipe_safe_code的映射（如果使用MultiPipe）
+            if self.is_multi_pipe and pipe_safe_code:
+                self.message_to_pipe[message_id] = pipe_safe_code
         
         # 发送数据
         if isinstance(data, dict):
@@ -547,10 +926,16 @@ class Endpoint:
             data_bytes = json.dumps({"data": str(data)}).encode('utf-8')
             
         # 获取发送任务的extension标识符
-        mission_extension = self.pipe.send(data_bytes, {
-            'route': route,
-            'message_id': message_id
-        })
+        if self.is_multi_pipe and pipe_safe_code:
+            mission_extension = self.pipe.send(data_bytes, {
+                'route': route,
+                'message_id': message_id
+            }, pipe_safe_code)
+        else:
+            mission_extension = self.pipe.send(data_bytes, {
+                'route': route,
+                'message_id': message_id
+            })
 
         # 如果返回的extension与message_id不同，说明是大数据任务
         # 存储它们之间的映射关系
@@ -566,7 +951,8 @@ class Endpoint:
         if mission_extension != message_id:
             return {
                 'message_id': message_id,
-                'mission_extension': mission_extension
+                'mission_extension': mission_extension,
+                'pipe_safe_code': pipe_safe_code if self.is_multi_pipe else None
             }
         
         return message_id
@@ -578,6 +964,9 @@ class Endpoint:
             data: The response data
             info: The original request info
         """
+        # 获取pipe_safe_code（如果使用MultiPipe）
+        pipe_safe_code = info.get('pipe_safe_code', None)
+        
         if isinstance(data, dict):
             data_bytes = json.dumps(data).encode('utf-8')
         elif isinstance(data, str):
@@ -587,10 +976,17 @@ class Endpoint:
         else:
             data_bytes = json.dumps({"data": str(data)}).encode('utf-8')
             
-        self.pipe.send(data_bytes, {
-            'is_response': True,
-            'message_id': info.get('message_id')
-        })
+        # 如果是MultiPipe且有pipe_safe_code，使用指定的pipe
+        if self.is_multi_pipe and pipe_safe_code:
+            self.pipe.send(data_bytes, {
+                'is_response': True,
+                'message_id': info.get('message_id')
+            }, pipe_safe_code)
+        else:
+            self.pipe.send(data_bytes, {
+                'is_response': True,
+                'message_id': info.get('message_id')
+            })
     
     def start(self, block: bool = True):
         """Start the endpoint.
@@ -650,13 +1046,14 @@ class Endpoint:
         logger.info(f"Endpoint registered blueprint '{blueprint.name}' with {len(blueprint.routes)} routes")
         return self  # 返回self以支持链式调用
         
-    def cancel_mission(self, extension: str) -> bool:
+    def cancel_mission(self, extension: str, pipe_safe_code: str = None) -> bool:
         """Cancel a specific transmission task.
         
         Removes the task from the send queue and sends a cancellation message to the remote endpoint.
         
         Args:
             extension: The extension identifier of the task to cancel
+            pipe_safe_code: Optional pipe safe code for MultiPipe
             
         Returns:
             bool: True if the task was found and canceled, False otherwise
@@ -664,7 +1061,10 @@ class Endpoint:
         # 使用锁保护取消操作
         with self.lock:
             # 调用底层pipe的cancel_mission方法
-            result = self.pipe.cancel_mission(extension)
+            if self.is_multi_pipe and pipe_safe_code:
+                result = self.pipe.cancel_mission(extension, pipe_safe_code)
+            else:
+                result = self.pipe.cancel_mission(extension)
             
             if result:
                 # 如果取消成功，触发任务取消事件

@@ -1,5 +1,4 @@
 from netcore import Endpoint, Pipe, Response, request
-from netcore.endpoint import logger
 import socket
 
 
